@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+.env
+web-ui/node_modules/
+web-ui/dist/
+drizzle/
+*.db
