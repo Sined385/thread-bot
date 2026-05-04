@@ -4,24 +4,56 @@ import { drafts } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '../logger';
 import { sendDraftNotification, updateDraftMessage } from './notifications';
+import { consumeLinkToken } from '../services/telegram-link.service';
 
 // Map of chatId -> draftId for tracking edit conversations
 const pendingEdits = new Map<number, number>();
 
 export function registerHandlers(): void {
+  // /start handler — links a chat to a user via the deep-link token.
+  bot.command('start', async (ctx) => {
+    const token = ctx.match?.trim();
+    const chatId = ctx.chat.id;
+    logger.info({ chatId, hasToken: !!token }, '/start received');
+
+    if (!token) {
+      await ctx.reply(
+        "Hi! Open the dashboard and tap 'Connect Telegram' to link this chat to your account.",
+      );
+      return;
+    }
+
+    const result = consumeLinkToken(token, chatId);
+    if (result.ok) {
+      await ctx.reply('Linked. From now on draft approvals will arrive here.');
+    } else if (result.reason === 'expired') {
+      await ctx.reply('That link expired. Generate a new one from the dashboard.');
+    } else {
+      await ctx.reply("That link isn't valid. Generate a new one from the dashboard.");
+    }
+  });
+
   // Approve handler
   bot.callbackQuery(/^approve:(\d+)$/, async (ctx) => {
     const draftId = parseInt(ctx.match[1], 10);
     logger.info({ draftId }, 'Approve callback received');
 
     try {
+      const draftRow = await db.query.drafts.findFirst({
+        where: eq(drafts.id, draftId),
+      });
+      if (!draftRow) {
+        await ctx.answerCallbackQuery({ text: 'Draft not found.' });
+        return;
+      }
+
       await db
         .update(drafts)
         .set({ status: 'approved', updatedAt: new Date() })
         .where(eq(drafts.id, draftId));
 
       const { publishDraft } = await import('../services/draft.service');
-      await publishDraft(draftId);
+      await publishDraft(draftRow.userId, draftId);
 
       const draft = await db.query.drafts.findFirst({
         where: eq(drafts.id, draftId),

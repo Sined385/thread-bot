@@ -1,11 +1,13 @@
 import { db } from '../db/client';
 import * as schema from '../db/schema';
-import { eq, desc, sql, and, count } from 'drizzle-orm';
+import { eq, desc, and, count } from 'drizzle-orm';
 import { ThreadsApi } from '../threads/api';
 import { sendDraftNotification, updateDraftMessage } from '../telegram/notifications';
+import { getUserById } from './user.service';
 import { logger } from '../logger';
 
 interface CreateDraftParams {
+  userId: number;
   type: 'original_post' | 'reply' | 'mention_reply' | 'keyword_reply';
   content: string;
   triggerSource: 'scheduled' | 'webhook_comment' | 'webhook_mention' | 'keyword_match' | 'manual';
@@ -14,18 +16,15 @@ interface CreateDraftParams {
   replyToUsername?: string;
 }
 
-/**
- * Creates a new draft, sends a Telegram notification for approval,
- * and saves the Telegram message ID back to the draft record.
- */
 export async function createDraft(params: CreateDraftParams) {
-  const { type, content, triggerSource, replyToThreadId, replyToText, replyToUsername } = params;
+  const { userId, type, content, triggerSource, replyToThreadId, replyToText, replyToUsername } = params;
 
-  logger.info({ type, triggerSource }, 'Creating new draft');
+  logger.info({ userId, type, triggerSource }, 'Creating new draft');
 
   const [draft] = db
     .insert(schema.drafts)
     .values({
+      userId,
       type,
       content,
       originalContent: content,
@@ -37,18 +36,30 @@ export async function createDraft(params: CreateDraftParams) {
     .returning()
     .all();
 
-  logger.info({ draftId: draft.id }, 'Draft inserted into database');
+  logger.info({ userId, draftId: draft.id }, 'Draft inserted into database');
+
+  const owner = getUserById(userId);
+  if (!owner?.telegramChatId) {
+    logger.info(
+      { userId, draftId: draft.id },
+      'Telegram not linked for user, skipping draft notification',
+    );
+    return draft;
+  }
 
   try {
-    const message = await sendDraftNotification({
-      id: draft.id,
-      type: draft.type,
-      status: draft.status,
-      content: draft.content,
-      replyToText: draft.replyToText,
-      replyToUsername: draft.replyToUsername,
-      triggerSource: draft.triggerSource,
-    });
+    const message = await sendDraftNotification(
+      {
+        id: draft.id,
+        type: draft.type,
+        status: draft.status,
+        content: draft.content,
+        replyToText: draft.replyToText,
+        replyToUsername: draft.replyToUsername,
+        triggerSource: draft.triggerSource,
+      },
+      owner.telegramChatId,
+    );
 
     db.update(schema.drafts)
       .set({
@@ -70,27 +81,23 @@ export async function createDraft(params: CreateDraftParams) {
   return draft;
 }
 
-/**
- * Publishes an approved draft to Threads.
- * Handles both original posts and replies, updates status, and notifies via Telegram.
- */
-export async function publishDraft(draftId: number) {
-  logger.info({ draftId }, 'Publishing draft');
+export async function publishDraft(userId: number, draftId: number) {
+  logger.info({ userId, draftId }, 'Publishing draft');
 
   const draft = db
     .select()
     .from(schema.drafts)
-    .where(eq(schema.drafts.id, draftId))
+    .where(and(eq(schema.drafts.id, draftId), eq(schema.drafts.userId, userId)))
     .get();
 
   if (!draft) {
-    throw new Error(`Draft ${draftId} not found`);
+    throw new Error(`Draft ${draftId} not found for user ${userId}`);
   }
 
   const account = db
     .select()
     .from(schema.accounts)
-    .limit(1)
+    .where(eq(schema.accounts.userId, userId))
     .get();
 
   if (!account) {
@@ -105,14 +112,12 @@ export async function publishDraft(draftId: number) {
     if (draft.type === 'original_post') {
       result = await api.createPost(draft.content);
     } else {
-      // reply, mention_reply, keyword_reply
       if (!draft.replyToThreadId) {
         throw new Error(`Draft ${draftId} is a ${draft.type} but has no replyToThreadId`);
       }
       result = await api.replyToPost(draft.content, draft.replyToThreadId);
     }
 
-    // Update draft status to published
     db.update(schema.drafts)
       .set({
         status: 'published',
@@ -122,9 +127,9 @@ export async function publishDraft(draftId: number) {
       .where(eq(schema.drafts.id, draftId))
       .run();
 
-    // Save to published_posts table
     db.insert(schema.publishedPosts)
       .values({
+        userId,
         threadsMediaId: result.id,
         content: draft.content,
         draftId: draft.id,
@@ -132,11 +137,10 @@ export async function publishDraft(draftId: number) {
       .run();
 
     logger.info(
-      { draftId, publishedThreadId: result.id },
+      { userId, draftId, publishedThreadId: result.id },
       'Draft published successfully',
     );
 
-    // Update Telegram message with success status
     if (draft.telegramMessageId && draft.telegramChatId) {
       try {
         await updateDraftMessage(
@@ -154,7 +158,6 @@ export async function publishDraft(draftId: number) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Update draft status to failed
     db.update(schema.drafts)
       .set({
         status: 'failed',
@@ -164,9 +167,8 @@ export async function publishDraft(draftId: number) {
       .where(eq(schema.drafts.id, draftId))
       .run();
 
-    logger.error({ error: errorMessage, draftId }, 'Failed to publish draft');
+    logger.error({ error: errorMessage, userId, draftId }, 'Failed to publish draft');
 
-    // Update Telegram message with failure status
     if (draft.telegramMessageId && draft.telegramChatId) {
       try {
         await updateDraftMessage(
@@ -184,56 +186,45 @@ export async function publishDraft(draftId: number) {
   }
 }
 
-/**
- * Returns all drafts with status 'pending', ordered by most recent first.
- */
-export function getPendingDrafts() {
+export function getPendingDrafts(userId: number) {
   return db
     .select()
     .from(schema.drafts)
-    .where(eq(schema.drafts.status, 'pending'))
+    .where(and(eq(schema.drafts.userId, userId), eq(schema.drafts.status, 'pending')))
     .orderBy(desc(schema.drafts.createdAt))
     .all();
 }
 
-/**
- * Returns a single draft by ID.
- */
-export function getDraftById(id: number) {
+export function getDraftById(userId: number, id: number) {
   return db
     .select()
     .from(schema.drafts)
-    .where(eq(schema.drafts.id, id))
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
     .get();
 }
 
-/**
- * Updates the content of an existing draft.
- */
-export function updateDraftContent(id: number, newContent: string) {
+export function updateDraftContent(userId: number, id: number, newContent: string) {
   db.update(schema.drafts)
     .set({
       content: newContent,
       updatedAt: new Date(),
     })
-    .where(eq(schema.drafts.id, id))
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
     .run();
 
-  logger.info({ draftId: id }, 'Draft content updated');
+  logger.info({ userId, draftId: id }, 'Draft content updated');
 
-  return getDraftById(id);
+  return getDraftById(userId, id);
 }
 
-/**
- * Returns counts of drafts grouped by status.
- */
-export function getDraftStats() {
+export function getDraftStats(userId: number) {
   const rows = db
     .select({
       status: schema.drafts.status,
       count: count(),
     })
     .from(schema.drafts)
+    .where(eq(schema.drafts.userId, userId))
     .groupBy(schema.drafts.status)
     .all();
 

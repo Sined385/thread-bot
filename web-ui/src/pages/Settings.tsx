@@ -1,202 +1,328 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { Icons } from '../components/Icons';
 
-const cardStyle: React.CSSProperties = {
-  background: '#1a1a1a',
-  borderRadius: '12px',
-  padding: '24px',
-  border: '1px solid #333',
-  marginBottom: '24px',
-};
+function Toggle({ on: initial, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  const [on, setOn] = useState(initial);
+  return <button className={`toggle ${on ? 'on' : ''}`} onClick={() => { setOn(!on); onChange(!on); }} />;
+}
 
-const inputStyle: React.CSSProperties = {
-  background: '#111',
-  color: '#fff',
-  border: '1px solid #444',
-  borderRadius: '6px',
-  padding: '8px 12px',
-  fontSize: '14px',
-  width: '100%',
-};
+function Row({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <div className="setting-row">
+      <div className="setting-info">
+        <h4>{title}</h4>
+        <p>{desc}</p>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
 
-export default function Settings() {
-  const [settings, setSettings] = useState<Record<string, any[]>>({});
+export default function BotSettings() {
+  const [tab, setTab] = useState('personality');
+  const [settings, setSettings] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState<string | null>(null);
-  const [token, setToken] = useState(localStorage.getItem('threadbot_token') || '');
 
   useEffect(() => {
-    api.getSettings().then(setSettings).catch(() => {});
+    api.getSettings().then((data: Record<string, any[]>) => {
+      const flat: Record<string, any> = {};
+      for (const items of Object.values(data)) {
+        for (const s of items) {
+          flat[s.key] = s.value;
+        }
+      }
+      setSettings(flat);
+    }).catch(() => {});
   }, []);
 
-  const updateSetting = async (key: string, value: any) => {
+  const update = async (key: string, value: any) => {
     setSaving(key);
-    try {
-      await api.updateSetting(key, value);
-      setSettings((prev) => {
-        const updated = { ...prev };
-        for (const cat of Object.keys(updated)) {
-          updated[cat] = updated[cat].map((s: any) =>
-            s.key === key ? { ...s, value } : s
-          );
-        }
-        return updated;
-      });
-    } catch (e) {
-      console.error(e);
-    }
+    setSettings(s => ({ ...s, [key]: value }));
+    try { await api.updateSetting(key, value); } catch (e) { console.error(e); }
     setSaving(null);
   };
 
-  const saveToken = () => {
-    localStorage.setItem('threadbot_token', token);
-    window.location.reload();
-  };
-
-  const renderField = (setting: any) => {
-    const { key, value, type, options, label, description } = setting;
-
-    return (
-      <div key={key} style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>
-          {label}
-          {saving === key && <span style={{ color: '#facc15', marginLeft: '8px', fontSize: '12px' }}>Saving...</span>}
-        </label>
-        {description && <p style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>{description}</p>}
-
-        {type === 'boolean' && (
-          <button
-            onClick={() => updateSetting(key, !value)}
-            style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid #444', background: value ? '#22c55e' : '#333', color: '#fff', cursor: 'pointer' }}
-          >
-            {value ? 'Enabled' : 'Disabled'}
-          </button>
-        )}
-
-        {type === 'select' && (
-          <select
-            value={value}
-            onChange={(e) => updateSetting(key, e.target.value)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-          >
-            {(options || []).map((opt: string) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        )}
-
-        {type === 'number' && (
-          <input
-            type="number"
-            value={value}
-            onChange={(e) => updateSetting(key, parseFloat(e.target.value))}
-            style={{ ...inputStyle, width: '120px' }}
-          />
-        )}
-
-        {type === 'text' && (
-          <input
-            type="text"
-            value={value}
-            onBlur={(e) => updateSetting(key, e.target.value)}
-            onChange={(e) => {
-              setSettings((prev) => {
-                const updated = { ...prev };
-                for (const cat of Object.keys(updated)) {
-                  updated[cat] = updated[cat].map((s: any) =>
-                    s.key === key ? { ...s, value: e.target.value } : s
-                  );
-                }
-                return updated;
-              });
-            }}
-            style={inputStyle}
-          />
-        )}
-
-        {type === 'textarea' && (
-          <textarea
-            value={value}
-            onBlur={(e) => updateSetting(key, e.target.value)}
-            onChange={(e) => {
-              setSettings((prev) => {
-                const updated = { ...prev };
-                for (const cat of Object.keys(updated)) {
-                  updated[cat] = updated[cat].map((s: any) =>
-                    s.key === key ? { ...s, value: e.target.value } : s
-                  );
-                }
-                return updated;
-              });
-            }}
-            style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
-          />
-        )}
-
-        {type === 'array' && (
-          <div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-              {(value || []).map((item: string, i: number) => (
-                <span key={i} style={{ background: '#333', padding: '4px 10px', borderRadius: '12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {item}
-                  <button
-                    onClick={() => updateSetting(key, value.filter((_: any, idx: number) => idx !== i))}
-                    style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px' }}
-                  >
-                    x
-                  </button>
-                </span>
-              ))}
-            </div>
-            <input
-              type="text"
-              placeholder="Type and press Enter to add"
-              style={{ ...inputStyle, width: '250px' }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const input = e.currentTarget;
-                  const newVal = input.value.trim();
-                  if (newVal) {
-                    updateSetting(key, [...(value || []), newVal]);
-                    input.value = '';
-                  }
-                }
-              }}
-            />
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const categoryLabels: Record<string, string> = {
-    personality: 'Personality',
-    content: 'Content',
-    monitoring: 'Monitoring',
-    scheduling: 'Scheduling',
-    advanced: 'Advanced',
-  };
+  const get = (key: string, fallback: any = '') => settings[key] ?? fallback;
 
   return (
-    <div>
-      <h1 style={{ fontSize: '24px', marginBottom: '16px' }}>Settings</h1>
+    <div className="page">
+      <h1 className="page-title">Bot settings</h1>
+      <p className="page-sub">How the bot writes, when it posts, and what it watches for.</p>
 
-      <div style={{ ...cardStyle, marginBottom: '32px' }}>
-        <h3 style={{ marginBottom: '8px' }}>API Token</h3>
-        <p style={{ color: '#666', fontSize: '12px', marginBottom: '8px' }}>Set your WEB_UI_SECRET to authenticate API requests</p>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} style={{ ...inputStyle, width: '300px' }} />
-          <button onClick={saveToken} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#3b82f6', color: '#fff', cursor: 'pointer' }}>Save</button>
+      <div className="tabs">
+        {[['personality', 'Personality'], ['content', 'Content'], ['scheduling', 'Scheduling'], ['monitoring', 'Monitoring'], ['guardrails', 'Guardrails']].map(([k, l]) => (
+          <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      <div className="card">
+        <div style={{ padding: '4px 24px' }}>
+          {tab === 'personality' && (
+            <>
+              <Row title="Voice" desc="A short prompt the bot uses to ground every draft. Keep it specific and concrete.">
+                <textarea
+                  className="textarea"
+                  value={get('personality_description', '')}
+                  onChange={e => setSettings(s => ({ ...s, personality_description: e.target.value }))}
+                  onBlur={e => update('personality_description', e.target.value)}
+                />
+              </Row>
+              <Row title="Tone" desc="The overall tone the bot aims for.">
+                <select
+                  className="select"
+                  value={get('tone', 'professional')}
+                  onChange={e => update('tone', e.target.value)}
+                  style={{ width: 200 }}
+                >
+                  {['professional', 'casual', 'witty', 'sarcastic', 'inspirational', 'educational', 'friendly'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </Row>
+              <Row title="Warmth level" desc="1 = dry and direct, 10 = warm and personable.">
+                <input
+                  className="input"
+                  type="number"
+                  min={1} max={10}
+                  value={get('warmth_level', 5)}
+                  onChange={e => update('warmth_level', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+              <Row title="Humor level" desc="1 = deadpan, 10 = very playful.">
+                <input
+                  className="input"
+                  type="number"
+                  min={1} max={10}
+                  value={get('humor_level', 3)}
+                  onChange={e => update('humor_level', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+              <Row title="Emoji usage" desc="How often the bot uses emoji.">
+                <select
+                  className="select"
+                  value={get('emoji_usage', 'minimal')}
+                  onChange={e => update('emoji_usage', e.target.value)}
+                  style={{ width: 200 }}
+                >
+                  {['none', 'minimal', 'moderate', 'heavy'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </Row>
+              <Row title="Length preference" desc="The bot will aim for this character range.">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="input"
+                    value={get('response_length', 'medium')}
+                    onChange={e => update('response_length', e.target.value)}
+                    style={{ width: 120 }}
+                    placeholder="short / medium / long"
+                  />
+                </div>
+              </Row>
+            </>
+          )}
+
+          {tab === 'content' && (
+            <>
+              <Row title="Topics to cover" desc="Soft suggestions the bot weaves in when generating original posts.">
+                <ChipEditor
+                  items={get('topics_of_interest', [])}
+                  onChange={v => update('topics_of_interest', v)}
+                />
+              </Row>
+              <Row title="Content pillars" desc="Core themes for original posts.">
+                <ChipEditor
+                  items={get('content_pillars', [])}
+                  onChange={v => update('content_pillars', v)}
+                />
+              </Row>
+              <Row title="Hashtag strategy" desc="Most teams leave this on 'none'. Threads' algorithm doesn't reward them.">
+                <select
+                  className="select"
+                  value={get('hashtag_strategy', 'none')}
+                  onChange={e => update('hashtag_strategy', e.target.value)}
+                  style={{ width: 200 }}
+                >
+                  {['none', 'minimal', 'moderate'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </Row>
+              <Row title="Max post length" desc="Maximum character count for generated posts.">
+                <input
+                  className="input"
+                  type="number"
+                  value={get('max_post_length', 500)}
+                  onChange={e => update('max_post_length', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+            </>
+          )}
+
+          {tab === 'scheduling' && (
+            <>
+              <Row title="Posting cadence" desc="Maximum original posts per day.">
+                <input
+                  className="input"
+                  type="number"
+                  value={get('max_posts_per_day', 3)}
+                  onChange={e => update('max_posts_per_day', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+              <Row title="Reply cap" desc="Maximum replies per day.">
+                <input
+                  className="input"
+                  type="number"
+                  value={get('max_replies_per_day', 20)}
+                  onChange={e => update('max_replies_per_day', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+              <Row title="Schedule" desc="Cron expression for when to generate posts.">
+                <input
+                  className="input"
+                  value={get('post_schedule_cron', '0 9,13,18 * * *')}
+                  onChange={e => setSettings(s => ({ ...s, post_schedule_cron: e.target.value }))}
+                  onBlur={e => update('post_schedule_cron', e.target.value)}
+                  style={{ width: 250 }}
+                  placeholder="0 9,13,18 * * *"
+                />
+              </Row>
+              <Row title="Auto-post enabled" desc="Enable scheduled post generation.">
+                <Toggle on={get('auto_post_enabled', false)} onChange={v => update('auto_post_enabled', v)} />
+              </Row>
+            </>
+          )}
+
+          {tab === 'monitoring' && (
+            <>
+              <Row title="Reply to mentions" desc="Auto-draft replies when someone @-mentions a connected account.">
+                <Toggle on={get('monitor_mentions', true)} onChange={v => update('monitor_mentions', v)} />
+              </Row>
+              <Row title="Reply to comments" desc="Draft replies to comments left under your published Threads posts.">
+                <Toggle on={get('monitor_comments', true)} onChange={v => update('monitor_comments', v)} />
+              </Row>
+              <Row title="Question detection" desc="Use AI to detect questions in comments and prioritize them.">
+                <Toggle on={get('question_detection', true)} onChange={v => update('question_detection', v)} />
+              </Row>
+              <Row title="Watch keywords" desc="Draft replies on Threads posts containing these phrases.">
+                <ChipEditor
+                  items={get('monitor_keywords', [])}
+                  onChange={v => update('monitor_keywords', v)}
+                />
+              </Row>
+            </>
+          )}
+
+          {tab === 'guardrails' && (
+            <>
+              <Row title="Blacklisted words" desc="The bot will never include these in drafts.">
+                <ChipEditor
+                  items={get('blacklist_words', [])}
+                  onChange={v => update('blacklist_words', v)}
+                />
+              </Row>
+              <Row title="Blacklisted topics" desc="Topics the bot should never engage with.">
+                <ChipEditor
+                  items={get('blacklist_topics', [])}
+                  onChange={v => update('blacklist_topics', v)}
+                />
+              </Row>
+              <Row title="Min comment length" desc="Ignore comments shorter than this.">
+                <input
+                  className="input"
+                  type="number"
+                  value={get('min_comment_length', 10)}
+                  onChange={e => update('min_comment_length', parseInt(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+              <Row title="OpenAI model" desc="Which model to use for generating content.">
+                <select
+                  className="select"
+                  value={get('openai_model', 'gpt-4o')}
+                  onChange={e => update('openai_model', e.target.value)}
+                  style={{ width: 200 }}
+                >
+                  {['gpt-4o', 'gpt-4o-mini'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </Row>
+              <Row title="Temperature" desc="0 = deterministic, 2 = very creative.">
+                <input
+                  className="input"
+                  type="number"
+                  step={0.1}
+                  min={0} max={2}
+                  value={get('openai_temperature', 0.8)}
+                  onChange={e => update('openai_temperature', parseFloat(e.target.value))}
+                  style={{ width: 100 }}
+                />
+              </Row>
+            </>
+          )}
         </div>
       </div>
 
-      {Object.entries(settings).map(([category, items]) => (
-        <div key={category} style={cardStyle}>
-          <h2 style={{ fontSize: '18px', marginBottom: '16px', color: '#fff' }}>
-            {categoryLabels[category] || category}
-          </h2>
-          {items.map(renderField)}
+      {/* Token section */}
+      <div style={{ marginTop: 32 }}>
+        <h3 className="section-title">API Token</h3>
+        <div className="card card-pad">
+          <div className="setting-info" style={{ marginBottom: 12 }}>
+            <h4 style={{ margin: '0 0 4px', fontSize: 13.5, fontWeight: 600 }}>Web UI secret</h4>
+            <p style={{ margin: 0, color: 'var(--ink-3)', fontSize: 12.5 }}>Set your WEB_UI_SECRET to authenticate API requests.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              className="input"
+              type="password"
+              defaultValue={localStorage.getItem('threadbot_token') || ''}
+              style={{ width: 300 }}
+              onBlur={e => {
+                localStorage.setItem('threadbot_token', e.target.value);
+              }}
+            />
+            <button className="btn" onClick={() => window.location.reload()}>Apply</button>
+          </div>
         </div>
-      ))}
+      </div>
+    </div>
+  );
+}
+
+function ChipEditor({ items, onChange }: { items: any[]; onChange: (v: string[]) => void }) {
+  const arr = Array.isArray(items) ? items : [];
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+        {arr.map((t: string, i: number) => (
+          <span key={i} className="chip">
+            {t}
+            <button className="x" onClick={() => onChange(arr.filter((_, idx) => idx !== i))}>x</button>
+          </span>
+        ))}
+      </div>
+      <input
+        className="input"
+        placeholder="Type and press Enter"
+        style={{ width: 250 }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            const val = e.currentTarget.value.trim();
+            if (val) {
+              onChange([...arr, val]);
+              e.currentTarget.value = '';
+            }
+          }
+        }}
+      />
     </div>
   );
 }

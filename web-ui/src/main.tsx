@@ -1,47 +1,84 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import './styles.css';
+
+import AppShell from './components/Shell';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
-import Settings from './pages/Settings';
-import ApprovalQueue from './pages/ApprovalQueue';
-import PostHistory from './pages/PostHistory';
-import Connection from './pages/Connection';
+import ContentPlan from './pages/ContentPlan';
+import BotSettings from './pages/Settings';
+import Integrations from './pages/Integrations';
+import { AuthProvider, RequireAuth, RequireOnboarded, RedirectIfAuthed, useAuth } from './auth';
 
-const navStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: '8px',
-  padding: '16px 24px',
-  borderBottom: '1px solid #222',
-  background: '#111',
-};
+function ShellLayout() {
+  const location = useLocation();
+  const { user } = useAuth();
 
-const linkStyle: React.CSSProperties = {
-  color: '#888',
-  textDecoration: 'none',
-  padding: '8px 16px',
-  borderRadius: '8px',
-  fontSize: '14px',
-};
+  const workspaceName = user?.workspace_name ?? 'Workspace';
+
+  const crumbMap: Record<string, string[]> = {
+    '/': [workspaceName, 'Home'],
+    '/plan': [workspaceName, 'Content plan'],
+    '/bot': [workspaceName, 'Bot settings'],
+    '/integrations': [workspaceName, 'Integrations'],
+  };
+
+  const crumbs = crumbMap[location.pathname] || [workspaceName];
+
+  return (
+    <AppShell crumbs={crumbs}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/plan" element={<ContentPlan />} />
+        <Route path="/bot" element={<BotSettings />} />
+        <Route path="/integrations" element={<Integrations />} />
+      </Routes>
+    </AppShell>
+  );
+}
 
 function App() {
   return (
     <BrowserRouter>
-      <nav style={navStyle}>
-        <NavLink to="/" style={({ isActive }) => ({ ...linkStyle, color: isActive ? '#fff' : '#888', background: isActive ? '#333' : 'transparent' })}>Dashboard</NavLink>
-        <NavLink to="/queue" style={({ isActive }) => ({ ...linkStyle, color: isActive ? '#fff' : '#888', background: isActive ? '#333' : 'transparent' })}>Approval Queue</NavLink>
-        <NavLink to="/history" style={({ isActive }) => ({ ...linkStyle, color: isActive ? '#fff' : '#888', background: isActive ? '#333' : 'transparent' })}>Post History</NavLink>
-        <NavLink to="/settings" style={({ isActive }) => ({ ...linkStyle, color: isActive ? '#fff' : '#888', background: isActive ? '#333' : 'transparent' })}>Settings</NavLink>
-        <NavLink to="/connection" style={({ isActive }) => ({ ...linkStyle, color: isActive ? '#fff' : '#888', background: isActive ? '#333' : 'transparent' })}>Connection</NavLink>
-      </nav>
-      <main style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+      <AuthProvider>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/queue" element={<ApprovalQueue />} />
-          <Route path="/history" element={<PostHistory />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/connection" element={<Connection />} />
+          <Route
+            path="/login"
+            element={
+              <RedirectIfAuthed>
+                <Login />
+              </RedirectIfAuthed>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <RedirectIfAuthed>
+                <Signup />
+              </RedirectIfAuthed>
+            }
+          />
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <Onboarding />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/*"
+            element={
+              <RequireOnboarded>
+                <ShellLayout />
+              </RequireOnboarded>
+            }
+          />
         </Routes>
-      </main>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

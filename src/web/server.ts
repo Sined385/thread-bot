@@ -1,8 +1,10 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { config } from '../config';
 import { logger } from '../logger';
 import { errorHandler } from './middleware/error.middleware';
+import authRoutes from './routes/auth.routes';
 import oauthRoutes from './routes/oauth.routes';
 import webhookRoutes from './routes/webhook.routes';
 import settingsRoutes from './routes/settings.routes';
@@ -21,9 +23,11 @@ export function createServer() {
     next();
   });
 
+  app.use(cookieParser());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  app.use('/api/auth', authRoutes);
   app.use('/api/oauth', oauthRoutes);
   app.use('/api/webhooks/threads', webhookRoutes);
   app.use('/api/settings', settingsRoutes);

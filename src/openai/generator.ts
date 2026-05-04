@@ -5,9 +5,9 @@ import { logger } from '../logger';
 /**
  * Generates an original post for Threads.
  */
-export async function generatePost(): Promise<string> {
-  const s = await getSettings();
-  const systemPrompt = await buildSystemPrompt('post');
+export async function generatePost(userId: number): Promise<string> {
+  const s = getSettings(userId);
+  const systemPrompt = buildSystemPrompt(userId, 'post');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);
@@ -24,7 +24,6 @@ export async function generatePost(): Promise<string> {
 
   let content = await callOpenAI(systemPrompt, userMessage, model, temperature);
 
-  // Retry once if the response exceeds the max length
   if (content.length > maxPostLength) {
     logger.warn(
       { length: content.length, maxPostLength },
@@ -45,12 +44,13 @@ export async function generatePost(): Promise<string> {
  * Generates a reply to a comment on Threads.
  */
 export async function generateReply(
+  userId: number,
   commentText: string,
   commentUsername: string,
   context?: string,
 ): Promise<string> {
-  const s = await getSettings();
-  const systemPrompt = await buildSystemPrompt('reply');
+  const s = getSettings(userId);
+  const systemPrompt = buildSystemPrompt(userId, 'reply');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);
@@ -70,7 +70,6 @@ export async function generateReply(
 
   let content = await callOpenAI(systemPrompt, userMessage, model, temperature);
 
-  // Retry once if the response exceeds the max length
   if (content.length > maxPostLength) {
     logger.warn(
       { length: content.length, maxPostLength },
@@ -91,11 +90,12 @@ export async function generateReply(
  * Generates a reply to a mention on Threads.
  */
 export async function generateMentionReply(
+  userId: number,
   mentionText: string,
   mentionUsername: string,
 ): Promise<string> {
-  const s = await getSettings();
-  const systemPrompt = await buildSystemPrompt('mention_reply');
+  const s = getSettings(userId);
+  const systemPrompt = buildSystemPrompt(userId, 'mention_reply');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);
@@ -109,7 +109,6 @@ export async function generateMentionReply(
 
   let content = await callOpenAI(systemPrompt, userMessage, model, temperature);
 
-  // Retry once if the response exceeds the max length
   if (content.length > maxPostLength) {
     logger.warn(
       { length: content.length, maxPostLength },
@@ -126,9 +125,6 @@ export async function generateMentionReply(
   return content;
 }
 
-/**
- * Calls the OpenAI chat completions API and returns the response text.
- */
 async function callOpenAI(
   systemPrompt: string,
   userMessage: string,

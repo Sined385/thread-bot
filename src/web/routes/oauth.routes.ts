@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { getAuthorizationUrl, exchangeCodeForToken, exchangeLongLivedToken, saveAccount } from '../../threads/auth';
 import { ThreadsApi } from '../../threads/api';
+import { authMiddleware } from '../middleware/auth.middleware';
 import { logger } from '../../logger';
 
 const router = Router();
+router.use(authMiddleware);
 
 router.get('/connect', (_req: Request, res: Response) => {
   const url = getAuthorizationUrl();
@@ -17,12 +19,12 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     if (error) {
       logger.error({ error }, 'OAuth error');
-      res.status(400).send(`OAuth error: ${error}`);
+      res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
       return;
     }
 
     if (!code) {
-      res.status(400).send('Missing authorization code');
+      res.redirect('/integrations?error=missing_code');
       return;
     }
 
@@ -32,19 +34,13 @@ router.get('/callback', async (req: Request, res: Response) => {
     const api = new ThreadsApi(longToken.access_token);
     const profile = await api.getUserProfile();
 
-    await saveAccount(profile, longToken.access_token, longToken.expires_in);
+    await saveAccount(req.user!.id, profile, longToken.access_token, longToken.expires_in);
 
-    logger.info({ username: profile.username }, 'Account connected');
-    res.send(`
-      <html><body style="font-family: sans-serif; text-align: center; padding: 50px;">
-        <h1>Connected!</h1>
-        <p>Successfully connected @${profile.username}</p>
-        <p>You can close this window.</p>
-      </body></html>
-    `);
+    logger.info({ username: profile.username, userId: req.user!.id }, 'Account connected');
+    res.redirect('/integrations?connected=1');
   } catch (error) {
     logger.error({ error }, 'OAuth callback failed');
-    res.status(500).send('Failed to connect account');
+    res.redirect('/integrations?error=callback_failed');
   }
 });
 

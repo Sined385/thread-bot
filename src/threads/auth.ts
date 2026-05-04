@@ -125,13 +125,14 @@ export async function refreshLongLivedToken(
  * Save or update an account in the database after successful authentication.
  */
 export async function saveAccount(
+  userId: number,
   profile: ThreadsUserProfile,
   token: string,
   expiresIn: number,
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-  logger.info({ userId: profile.id, username: profile.username }, 'Saving account to database');
+  logger.info({ userId, threadsUserId: profile.id, username: profile.username }, 'Saving account to database');
 
   const existing = db
     .select()
@@ -142,6 +143,7 @@ export async function saveAccount(
   if (existing) {
     db.update(schema.accounts)
       .set({
+        userId,
         username: profile.username,
         accessToken: token,
         tokenExpiresAt: expiresAt,
@@ -152,10 +154,11 @@ export async function saveAccount(
       .where(eq(schema.accounts.threadsUserId, profile.id))
       .run();
 
-    logger.info({ userId: profile.id }, 'Updated existing account');
+    logger.info({ userId, threadsUserId: profile.id }, 'Updated existing account');
   } else {
     db.insert(schema.accounts)
       .values({
+        userId,
         threadsUserId: profile.id,
         username: profile.username,
         accessToken: token,
@@ -165,6 +168,6 @@ export async function saveAccount(
       })
       .run();
 
-    logger.info({ userId: profile.id }, 'Created new account');
+    logger.info({ userId, threadsUserId: profile.id }, 'Created new account');
   }
 }

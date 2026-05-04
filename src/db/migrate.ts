@@ -16,8 +16,21 @@ sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 
 sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    workspace_name TEXT NOT NULL,
+    workspace_website TEXT,
+    onboarding_completed_at INTEGER,
+    created_at INTEGER DEFAULT (unixepoch()),
+    updated_at INTEGER DEFAULT (unixepoch())
+  );
+
   CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
     threads_user_id TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL,
     access_token TEXT NOT NULL,
@@ -30,6 +43,7 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS drafts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     content TEXT NOT NULL,
@@ -48,7 +62,8 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    key TEXT NOT NULL,
     value TEXT NOT NULL,
     category TEXT NOT NULL,
     label TEXT NOT NULL,
@@ -57,8 +72,11 @@ sqlite.exec(`
     options TEXT
   );
 
+  CREATE UNIQUE INDEX IF NOT EXISTS settings_user_key_unique ON settings(user_id, key);
+
   CREATE TABLE IF NOT EXISTS webhook_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
     topic TEXT,
     field TEXT,
     payload TEXT NOT NULL,
@@ -68,6 +86,7 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS published_posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
     threads_media_id TEXT NOT NULL UNIQUE,
     content TEXT NOT NULL,
     permalink TEXT,
@@ -77,16 +96,44 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS processed_threads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
     threads_media_id TEXT NOT NULL,
     type TEXT NOT NULL,
     created_at INTEGER DEFAULT (unixepoch())
   );
 
+  CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
+  CREATE INDEX IF NOT EXISTS idx_drafts_user_id ON drafts(user_id);
   CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status);
   CREATE INDEX IF NOT EXISTS idx_drafts_type ON drafts(type);
+  CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id);
+  CREATE INDEX IF NOT EXISTS idx_webhook_events_user_id ON webhook_events(user_id);
   CREATE INDEX IF NOT EXISTS idx_webhook_events_processed ON webhook_events(processed);
+  CREATE INDEX IF NOT EXISTS idx_published_posts_user_id ON published_posts(user_id);
+  CREATE INDEX IF NOT EXISTS idx_processed_threads_user_id ON processed_threads(user_id);
   CREATE INDEX IF NOT EXISTS idx_processed_threads_media_id ON processed_threads(threads_media_id);
 `);
+
+// Additive column migrations for pre-existing user rows.
+const additive = [
+  'ALTER TABLE users ADD COLUMN onboarding_completed_at INTEGER',
+  'ALTER TABLE users ADD COLUMN telegram_chat_id TEXT',
+  'ALTER TABLE users ADD COLUMN telegram_link_token TEXT',
+  'ALTER TABLE users ADD COLUMN telegram_link_token_expires_at INTEGER',
+];
+for (const stmt of additive) {
+  try {
+    sqlite.exec(stmt);
+  } catch (e: any) {
+    if (!String(e.message).includes('duplicate column')) throw e;
+  }
+}
+
+try {
+  sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_link_token_unique ON users(telegram_link_token)');
+} catch (e: any) {
+  // index already exists is fine
+}
 
 console.log('Database migrated successfully.');
 sqlite.close();

@@ -6,3 +6,5 @@ web-ui/node_modules/
 web-ui/dist/
 drizzle/
 *.db
+*.tsbuildinfo
+.claude/

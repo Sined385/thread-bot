@@ -1,6 +1,5 @@
 import { InlineKeyboard } from 'grammy';
 import { bot } from './bot';
-import { config } from '../config';
 import { logger } from '../logger';
 
 interface Draft {
@@ -42,7 +41,7 @@ function buildDraftPreviewText(draft: Draft): string {
   return lines.join('\n');
 }
 
-export async function sendDraftNotification(draft: Draft) {
+export async function sendDraftNotification(draft: Draft, chatId: string | number) {
   const text = buildDraftPreviewText(draft);
 
   const keyboard = new InlineKeyboard()
@@ -51,18 +50,18 @@ export async function sendDraftNotification(draft: Draft) {
     .text('\u{274C} Reject', `reject:${draft.id}`);
 
   try {
-    const message = await bot.api.sendMessage(config.TELEGRAM_CHAT_ID, text, {
+    const message = await bot.api.sendMessage(chatId, text, {
       reply_markup: keyboard,
     });
 
     logger.info(
-      { draftId: draft.id, messageId: message.message_id },
+      { draftId: draft.id, chatId, messageId: message.message_id },
       'Sent draft notification to Telegram',
     );
 
     return message;
   } catch (error) {
-    logger.error({ error, draftId: draft.id }, 'Failed to send draft notification to Telegram');
+    logger.error({ error, draftId: draft.id, chatId }, 'Failed to send draft notification to Telegram');
     throw error;
   }
 }

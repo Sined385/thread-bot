@@ -1,32 +1,17 @@
-import { eq } from 'drizzle-orm';
-import { db } from '../db/client';
-import { settings } from '../db/schema';
-import { logger } from '../logger';
+import { getSettings as getSettingsForUser } from '../services/settings.service';
 
-/**
- * Loads all settings from the database into a key-value map.
- */
-export async function getSettings(): Promise<Record<string, string>> {
-  try {
-    const rows = db.select().from(settings).all();
-    const map: Record<string, string> = {};
-    for (const row of rows) {
-      map[row.key] = row.value;
-    }
-    return map;
-  } catch (error) {
-    logger.error({ error }, 'Failed to load settings from database');
-    return {};
-  }
+export function getSettings(userId: number): Record<string, string> {
+  return getSettingsForUser(userId);
 }
 
 /**
  * Builds a system prompt for OpenAI based on settings stored in the database.
  */
-export async function buildSystemPrompt(
+export function buildSystemPrompt(
+  userId: number,
   context: 'post' | 'reply' | 'mention_reply',
-): Promise<string> {
-  const s = await getSettings();
+): string {
+  const s = getSettings(userId);
 
   // Check for context-specific prompt overrides first
   if (context === 'post' && s.post_system_prompt) {

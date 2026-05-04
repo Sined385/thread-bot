@@ -1,14 +1,32 @@
 import { Request, Response, NextFunction } from 'express';
-import { config } from '../../config';
+import { SESSION_COOKIE, verifySession } from './session';
+import { getUserById, type User } from '../../services/user.service';
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: User;
+  }
+}
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const token = req.headers.authorization?.replace('Bearer ', '') ||
-    req.query.token as string;
-
-  if (!token || token !== config.WEB_UI_SECRET) {
+  const token = req.cookies?.[SESSION_COOKIE];
+  if (!token) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
+  const payload = verifySession(token);
+  if (!payload) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const user = getUserById(payload.userId);
+  if (!user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  req.user = user;
   next();
 }

@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import { eq } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../db/client';
 import * as schema from '../db/schema';
@@ -8,7 +9,6 @@ import type { ThreadsWebhookPayload, ThreadsWebhookEntry } from '../types/thread
 
 /**
  * Validate the X-Hub-Signature-256 header against the raw request payload.
- * Returns true if the HMAC SHA-256 signature matches.
  */
 export function validateSignature(
   payload: string,
@@ -18,7 +18,6 @@ export function validateSignature(
   const expectedSignature =
     'sha256=' + createHmac('sha256', appSecret).update(payload).digest('hex');
 
-  // Constant-time comparison to prevent timing attacks
   if (signature.length !== expectedSignature.length) {
     return false;
   }
@@ -31,9 +30,6 @@ export function validateSignature(
   return mismatch === 0;
 }
 
-/**
- * Handle GET request for webhook verification (hub.challenge).
- */
 export function handleVerification(req: Request, res: Response): void {
   const mode = req.query['hub.mode'] as string | undefined;
   const token = req.query['hub.verify_token'] as string | undefined;
@@ -50,10 +46,6 @@ export function handleVerification(req: Request, res: Response): void {
   }
 }
 
-/**
- * Process an incoming webhook event payload.
- * Routes events by field type and stores the raw event in the database.
- */
 export async function processWebhookEvent(
   payload: ThreadsWebhookPayload,
 ): Promise<void> {
@@ -63,10 +55,23 @@ export async function processWebhookEvent(
   );
 
   for (const entry of payload.entry) {
+    // Resolve which user this entry belongs to via the Threads user id (entry.id).
+    const account = db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.threadsUserId, entry.id))
+      .get();
+
+    const userId = account?.userId ?? null;
+
+    if (!userId) {
+      logger.warn({ entryId: entry.id }, 'Webhook entry has no matching account, persisting unscoped event');
+    }
+
     for (const change of entry.changes) {
-      // Store the raw event in the database
       db.insert(schema.webhookEvents)
         .values({
+          userId,
           topic: payload.object,
           field: change.field,
           payload: JSON.stringify({ entry, change }),
@@ -76,6 +81,7 @@ export async function processWebhookEvent(
 
       logger.debug(
         {
+          userId,
           field: change.field,
           verb: change.value.verb,
           entryId: entry.id,
@@ -83,11 +89,16 @@ export async function processWebhookEvent(
         'Stored webhook event',
       );
 
+      if (!userId) {
+        // Without a known user we cannot route AI replies; the raw event is stored for inspection.
+        continue;
+      }
+
       try {
-        await routeEvent(entry, change.field, change.value);
+        await routeEvent(userId, entry, change.field, change.value);
       } catch (error) {
         logger.error(
-          { error, field: change.field, entryId: entry.id },
+          { error, userId, field: change.field, entryId: entry.id },
           'Failed to route webhook event',
         );
       }
@@ -95,10 +106,8 @@ export async function processWebhookEvent(
   }
 }
 
-/**
- * Route a single event change to the appropriate handler.
- */
 async function routeEvent(
+  userId: number,
   entry: ThreadsWebhookEntry,
   field: string,
   value: ThreadsWebhookEntry['changes'][number]['value'],
@@ -107,6 +116,7 @@ async function routeEvent(
     case 'replies': {
       logger.info(
         {
+          userId,
           verb: value.verb,
           threadId: value.thread_id,
           from: value.from?.username,
@@ -117,6 +127,7 @@ async function routeEvent(
       if (value.thread_id && value.text && value.from?.username) {
         const { processComment } = await import('../services/comment.service');
         await processComment(
+          userId,
           value.thread_id,
           value.text,
           value.from.username,
@@ -129,6 +140,7 @@ async function routeEvent(
     case 'mentions': {
       logger.info(
         {
+          userId,
           verb: value.verb,
           mediaId: value.media_id,
           from: value.from?.username,
@@ -139,6 +151,7 @@ async function routeEvent(
       if (value.media_id && value.text && value.from?.username) {
         const { processMention } = await import('../services/mention.service');
         await processMention(
+          userId,
           value.media_id,
           value.text,
           value.from.username,
@@ -148,7 +161,7 @@ async function routeEvent(
     }
 
     default:
-      logger.warn({ field }, 'Received webhook event with unhandled field type');
+      logger.warn({ userId, field }, 'Received webhook event with unhandled field type');
       break;
   }
 }
