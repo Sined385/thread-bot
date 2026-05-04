@@ -10,6 +10,7 @@ import webhookRoutes from './routes/webhook.routes';
 import settingsRoutes from './routes/settings.routes';
 import draftsRoutes from './routes/drafts.routes';
 import postsRoutes from './routes/posts.routes';
+import legalRoutes from './routes/legal.routes';
 
 export function createServer() {
   const app = express();
@@ -37,6 +38,10 @@ export function createServer() {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
+
+  // Public legal pages — must be mounted before the SPA catch-all so the
+  // catch-all doesn't swallow them.
+  app.use('/', legalRoutes);
 
   const webUiPath = path.join(__dirname, '../../web-ui/dist');
   app.use(express.static(webUiPath));
