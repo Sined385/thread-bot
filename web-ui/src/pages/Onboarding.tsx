@@ -184,55 +184,19 @@ export default function Onboarding() {
 /* ---------------- Step 1: Connect Threads ---------------- */
 function Step1({ onContinue }: { onContinue: () => void }) {
   const [account, setAccount] = useState<any>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const connected = !!account;
 
-  const reload = async () => {
-    try {
-      const a = await api.getAccount();
-      setAccount(a);
-    } catch {
-      // ignore — keep current state
-    }
-  };
-
-  // Initial check: maybe they already linked Threads earlier.
+  // Detect connected state on mount — covers the post-OAuth return,
+  // since the callback redirects through the auth/onboarding gate which
+  // lands the user back here.
   useEffect(() => {
-    reload();
+    api.getAccount().then(setAccount).catch(() => {});
   }, []);
 
-  // While connecting, poll + listen for window focus to auto-detect callback completion.
-  useEffect(() => {
-    if (!connecting || connected) return;
-    const interval = window.setInterval(reload, 2500);
-    const onFocus = () => reload();
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') reload();
-    };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    const stop = window.setTimeout(() => setConnecting(false), 10 * 60 * 1000);
-    return () => {
-      window.clearInterval(interval);
-      window.clearTimeout(stop);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [connecting, connected]);
-
-  useEffect(() => {
-    if (connecting && connected) setConnecting(false);
-  }, [connecting, connected]);
-
   const onConnect = () => {
-    setError(null);
-    setConnecting(true);
-    const popup = window.open('/api/oauth/connect', '_blank', 'noopener');
-    if (!popup) {
-      setError("Popup blocked — allow popups and try again.");
-      setConnecting(false);
-    }
+    // Same-tab navigation. Safari (and stricter Chrome configs) block popups,
+    // and onboarding has no state to lose at step 1.
+    window.location.href = '/api/oauth/connect';
   };
 
   const initials = account?.username
@@ -257,24 +221,10 @@ function Step1({ onContinue }: { onContinue: () => void }) {
           <div className="card" style={{ background: 'var(--ink-soft)', padding: 14, borderColor: 'transparent', fontSize: 12.5, color: 'var(--ink-3)' }}>
             We never post without you. Drafts always wait for your approval.
           </div>
-          {error && (
-            <div style={{ color: 'var(--bad)', fontSize: 12.5, marginTop: 10 }}>{error}</div>
-          )}
           <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
-            <button className="btn primary" onClick={onConnect} disabled={connecting}>
-              <Icons.Link size={14} />
-              {connecting ? 'Listening for Threads…' : 'Continue with Threads'}
+            <button className="btn primary" onClick={onConnect}>
+              <Icons.Link size={14} /> Continue with Threads
             </button>
-            {connecting && (
-              <span className="muted" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{
-                  display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-                  background: 'var(--accent)',
-                  animation: 'tb-pulse 1.4s ease-in-out infinite',
-                }} />
-                We'll detect it automatically.
-              </span>
-            )}
           </div>
         </>
       ) : (
