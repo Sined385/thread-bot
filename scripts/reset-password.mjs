@@ -1,12 +1,12 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
+// Plain ESM so it runs under `node` in production (no tsx needed).
+// Usage: node scripts/reset-password.mjs --email=... --password=...
+import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import path from 'node:path';
+import fs from 'node:fs';
 
-function arg(name: string): string | undefined {
+function arg(name) {
   const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
   if (eq) return eq.split('=').slice(1).join('=');
   const flag = process.argv.indexOf(`--${name}`);
@@ -18,7 +18,7 @@ const email = arg('email');
 const password = arg('password');
 
 if (!email || !password) {
-  console.error('Usage: tsx scripts/reset-password.ts --email=foo@bar.com --password=NewPassword123');
+  console.error('Usage: node scripts/reset-password.mjs --email=foo@bar.com --password=NewPassword123');
   process.exit(1);
 }
 
@@ -35,8 +35,7 @@ if (!fs.existsSync(dbPath)) {
 console.log(`Using database at ${path.resolve(dbPath)}`);
 
 const sqlite = new Database(dbPath);
-
-const row = sqlite.prepare('SELECT id, email FROM users WHERE email = ?').get(email.toLowerCase().trim()) as { id: number; email: string } | undefined;
+const row = sqlite.prepare('SELECT id, email FROM users WHERE email = ?').get(email.toLowerCase().trim());
 if (!row) {
   console.error(`No user with email ${email}.`);
   sqlite.close();
