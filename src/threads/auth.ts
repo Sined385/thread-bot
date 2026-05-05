@@ -19,14 +19,20 @@ const SCOPES = [
 
 /**
  * Build the Threads OAuth authorization URL.
+ *
+ * The optional `state` parameter is a short-lived signed JWT that lets
+ * the callback identify the initiating user without depending on the
+ * session cookie surviving the cross-site redirect chain. Also serves
+ * as CSRF protection.
  */
-export function getAuthorizationUrl(): string {
+export function getAuthorizationUrl(state?: string): string {
   const params = new URLSearchParams({
     client_id: config.THREADS_APP_ID,
     redirect_uri: config.THREADS_REDIRECT_URI,
     scope: SCOPES.join(','),
     response_type: 'code',
   });
+  if (state) params.set('state', state);
 
   return `https://threads.net/oauth/authorize?${params.toString()}`;
 }
@@ -121,8 +127,17 @@ export async function refreshLongLivedToken(
   return data;
 }
 
+export class AccountAlreadyLinkedError extends Error {
+  constructor(public readonly ownerUserId: number) {
+    super('account_already_linked');
+    this.name = 'AccountAlreadyLinkedError';
+  }
+}
+
 /**
  * Save or update an account in the database after successful authentication.
+ * Refuses to transfer an existing account to a different user — that's an
+ * account-stealing vector. The caller maps the error to a friendly redirect.
  */
 export async function saveAccount(
   userId: number,
@@ -141,9 +156,16 @@ export async function saveAccount(
     .get();
 
   if (existing) {
+    if (existing.userId !== userId) {
+      logger.warn(
+        { userId, ownerUserId: existing.userId, threadsUserId: profile.id },
+        'Refusing to relink Threads account owned by another user',
+      );
+      throw new AccountAlreadyLinkedError(existing.userId);
+    }
+
     db.update(schema.accounts)
       .set({
-        userId,
         username: profile.username,
         accessToken: token,
         tokenExpiresAt: expiresAt,

@@ -78,6 +78,7 @@ export const api = {
   // Posts
   getPosts: () => apiFetch('/posts'),
   getAccount: () => apiFetch('/posts/account'),
+  disconnectAccount: () => apiFetch('/posts/account', { method: 'DELETE' }),
 
   getHealth: () => fetch('/api/health').then((r) => r.json()),
 };

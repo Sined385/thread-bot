@@ -3,6 +3,7 @@ import { db } from '../../db/client';
 import * as schema from '../../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { logger } from '../../logger';
 
 const router = Router();
 router.use(authMiddleware);
@@ -43,6 +44,16 @@ router.get('/account', (req: Request, res: Response) => {
     tokenExpiresAt: account.tokenExpiresAt,
     scopes: account.scopes,
   });
+});
+
+router.delete('/account', (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const result = db
+    .delete(schema.accounts)
+    .where(eq(schema.accounts.userId, userId))
+    .run();
+  logger.info({ userId, changes: result.changes }, 'Disconnected Threads account');
+  res.json({ ok: true, removed: result.changes });
 });
 
 export default router;

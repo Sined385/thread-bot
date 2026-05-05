@@ -30,6 +30,7 @@ function BannerCard({ banner }: { banner: Banner | null }) {
 function ThreadsSection({ banner }: { banner: Banner | null }) {
   const [account, setAccount] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [disconnecting, setDisconnecting] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -38,6 +39,20 @@ function ThreadsSection({ banner }: { banner: Banner | null }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [location.search]);
+
+  const onDisconnect = async () => {
+    if (!window.confirm('Disconnect Threads? Drafts and history are kept; the bot will stop drafting and publishing.')) return;
+    setDisconnecting(true);
+    try {
+      await api.disconnectAccount();
+      setAccount(null);
+    } catch (e) {
+      // surface a minimal hint; user can retry
+      window.alert('Could not disconnect. Try again.');
+    } finally {
+      setDisconnecting(false);
+    }
+  };
 
   return (
     <section style={{ marginBottom: 36 }}>
@@ -56,13 +71,21 @@ function ThreadsSection({ banner }: { banner: Banner | null }) {
           </a>
         </div>
       ) : (
-        <ThreadsConnected account={account} />
+        <ThreadsConnected account={account} onDisconnect={onDisconnect} disconnecting={disconnecting} />
       )}
     </section>
   );
 }
 
-function ThreadsConnected({ account }: { account: any }) {
+function ThreadsConnected({
+  account,
+  onDisconnect,
+  disconnecting,
+}: {
+  account: any;
+  onDisconnect: () => void;
+  disconnecting: boolean;
+}) {
   const initials = account.username ? account.username.slice(0, 2).toUpperCase() : 'TB';
   const tokenExpiry = account.tokenExpiresAt
     ? Math.max(0, Math.round((account.tokenExpiresAt * 1000 - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -108,7 +131,9 @@ function ThreadsConnected({ account }: { account: any }) {
           <div style={{ fontWeight: 600, fontSize: 13.5 }}>Disconnect</div>
           <div className="muted" style={{ fontSize: 12.5 }}>The bot will stop drafting and publishing immediately. Existing drafts and history are kept.</div>
         </div>
-        <button className="btn danger">Disconnect</button>
+        <button className="btn danger" onClick={onDisconnect} disabled={disconnecting}>
+          {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+        </button>
       </div>
     </>
   );
@@ -231,7 +256,21 @@ export default function Integrations() {
       setBanner({ kind: 'ok', text: 'Threads account connected.' });
       navigate('/integrations', { replace: true });
     } else if (params.get('error')) {
-      setBanner({ kind: 'err', text: `Connection failed: ${params.get('error')}` });
+      const code = params.get('error');
+      const detail = params.get('detail');
+      const text = (() => {
+        switch (code) {
+          case 'account_already_linked':
+            return 'That Threads account is already linked to another workspace. Disconnect it from the other workspace first.';
+          case 'missing_code':
+            return "Threads didn't return an authorization code. Try again.";
+          case 'callback_failed':
+            return `Connection failed${detail ? `: ${detail}` : '.'}`;
+          default:
+            return `Connection failed: ${code}`;
+        }
+      })();
+      setBanner({ kind: 'err', text });
       navigate('/integrations', { replace: true });
     }
   }, [location.search, navigate]);
