@@ -13,6 +13,12 @@ const envSchema = z.object({
   THREADS_APP_SECRET: z.string().min(1),
   THREADS_REDIRECT_URI: z.string().url(),
   THREADS_WEBHOOK_VERIFY_TOKEN: z.string().min(1),
+  // Comma-separated list of scopes to request. Default = all five (matches
+  // the original product). For testing while Meta App Review is pending,
+  // set THREADS_SCOPES=threads_basic to use only the auto-approved scope.
+  THREADS_SCOPES: z
+    .string()
+    .default('threads_basic,threads_content_publish,threads_manage_replies,threads_read_replies,threads_manage_insights'),
 
   TELEGRAM_BOT_TOKEN: z.string().min(1),
 

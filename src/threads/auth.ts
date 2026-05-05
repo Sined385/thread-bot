@@ -9,13 +9,7 @@ import type {
   ThreadsUserProfile,
 } from '../types/threads.types';
 
-const SCOPES = [
-  'threads_basic',
-  'threads_content_publish',
-  'threads_manage_replies',
-  'threads_read_replies',
-  'threads_manage_insights',
-];
+const SCOPES = config.THREADS_SCOPES.split(',').map((s) => s.trim()).filter(Boolean);
 
 /**
  * Build the Threads OAuth authorization URL.
