@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -28,9 +28,37 @@ const STEP3_KEYS = new Set([
 export default function Onboarding() {
   const [step, setStep] = useState(1);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, refresh } = useAuth();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [oauthBanner, setOauthBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // Surface ?connected / ?error params dropped by the OAuth callback.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('connected') === '1') {
+      setOauthBanner({ kind: 'ok', text: 'Threads account connected.' });
+      navigate('/onboarding', { replace: true });
+    } else if (params.get('error')) {
+      const code = params.get('error');
+      const detail = params.get('detail');
+      const text = (() => {
+        switch (code) {
+          case 'account_already_linked':
+            return 'That Threads account is already linked to another workspace.';
+          case 'missing_code':
+            return "Threads didn't return an authorization code.";
+          case 'callback_failed':
+            return `Threads connection failed${detail ? `: ${detail}` : '.'}`;
+          default:
+            return `Threads connection failed: ${code}`;
+        }
+      })();
+      setOauthBanner({ kind: 'err', text });
+      navigate('/onboarding', { replace: true });
+    }
+  }, [location.search, navigate]);
 
   const [biz, setBiz] = useState<BizState>({
     name: user?.workspace_name ?? '',
@@ -140,6 +168,21 @@ export default function Onboarding() {
           {titles[step]}
         </h1>
         <p className="muted" style={{ margin: '0 0 22px', fontSize: 14.5 }}>{subtitles[step]}</p>
+
+        {oauthBanner && (
+          <div
+            className="card card-pad"
+            style={{
+              marginBottom: 16,
+              background: oauthBanner.kind === 'ok' ? 'color-mix(in oklab, var(--good) 14%, white)' : '#fbe9e9',
+              borderColor: oauthBanner.kind === 'ok' ? 'color-mix(in oklab, var(--good) 30%, transparent)' : '#f3c8c8',
+              color: oauthBanner.kind === 'ok' ? 'oklch(0.42 0.13 155)' : 'var(--bad)',
+              fontSize: 13.5,
+            }}
+          >
+            {oauthBanner.text}
+          </div>
+        )}
 
         {/* Step body */}
         <div className="card card-pad" style={{ padding: 24 }}>

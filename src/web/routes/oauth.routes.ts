@@ -9,6 +9,7 @@ import {
 } from '../../threads/auth';
 import { ThreadsApi } from '../../threads/api';
 import { parseSignedRequest } from '../../threads/signed-request';
+import { getUserById } from '../../services/user.service';
 import { db } from '../../db/client';
 import * as schema from '../../db/schema';
 import { config } from '../../config';
@@ -16,6 +17,21 @@ import { authMiddleware } from '../middleware/auth.middleware';
 import { SESSION_COOKIE } from '../middleware/session';
 import { signOauthState, verifyOauthState } from '../middleware/oauth-state';
 import { logger } from '../../logger';
+
+/**
+ * Pick the right post-callback destination so query-string state actually
+ * reaches the page the user lands on. /integrations is gated by
+ * RequireOnboarded; if the user hasn't onboarded, the SPA bounces them to
+ * /onboarding and silently drops the ?connected/?error params. So when the
+ * user isn't onboarded yet, redirect straight to /onboarding with the
+ * params attached.
+ */
+function postOauthRedirect(userId: number, params: Record<string, string>): string {
+  const user = getUserById(userId);
+  const path = user?.onboardingCompletedAt ? '/integrations' : '/onboarding';
+  const qs = new URLSearchParams(params).toString();
+  return `${path}?${qs}`;
+}
 
 const router = Router();
 
@@ -71,12 +87,6 @@ router.get('/callback', async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
   const stateRaw = req.query.state as string | undefined;
 
-  if (error) {
-    logger.error({ error, errorDescription }, 'oauth provider returned error');
-    res.redirect(`/integrations?error=${encodeURIComponent(error)}`);
-    return;
-  }
-
   if (!stateRaw) {
     logger.warn({ query: req.query }, 'oauth callback missing state');
     res.redirect('/login?reason=oauth_state_invalid');
@@ -92,9 +102,15 @@ router.get('/callback', async (req: Request, res: Response) => {
 
   const userId = state.userId;
 
+  if (error) {
+    logger.error({ error, errorDescription, userId }, 'oauth provider returned error');
+    res.redirect(postOauthRedirect(userId, { error: error }));
+    return;
+  }
+
   if (!code) {
     logger.error({ userId, query: req.query }, 'oauth callback missing code');
-    res.redirect('/integrations?error=missing_code');
+    res.redirect(postOauthRedirect(userId, { error: 'missing_code' }));
     return;
   }
 
@@ -105,22 +121,23 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     const api = new ThreadsApi(longToken.access_token);
     const profile = await api.getUserProfile();
+    logger.info({ userId, threadsUserId: profile.id, username: profile.username }, 'oauth fetched profile');
 
     await saveAccount(userId, profile, longToken.access_token, longToken.expires_in);
 
     logger.info({ username: profile.username, userId }, 'Account connected');
-    res.redirect('/integrations?connected=1');
+    res.redirect(postOauthRedirect(userId, { connected: '1' }));
   } catch (e: any) {
     if (e instanceof AccountAlreadyLinkedError) {
       logger.warn({ userId, ownerUserId: e.ownerUserId }, 'oauth refused: account linked to another user');
-      res.redirect(`/integrations?error=account_already_linked`);
+      res.redirect(postOauthRedirect(userId, { error: 'account_already_linked' }));
       return;
     }
     logger.error(
       { error: e?.message || String(e), stack: e?.stack, userId },
       'OAuth callback failed',
     );
-    res.redirect(`/integrations?error=callback_failed&detail=${encodeURIComponent(e?.message || 'unknown')}`);
+    res.redirect(postOauthRedirect(userId, { error: 'callback_failed', detail: e?.message || 'unknown' }));
   }
 });
 
