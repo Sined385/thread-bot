@@ -271,28 +271,6 @@ export default function BotSettings() {
         </div>
       </div>
 
-      {/* Token section */}
-      <div style={{ marginTop: 32 }}>
-        <h3 className="section-title">API Token</h3>
-        <div className="card card-pad">
-          <div className="setting-info" style={{ marginBottom: 12 }}>
-            <h4 style={{ margin: '0 0 4px', fontSize: 13.5, fontWeight: 600 }}>Web UI secret</h4>
-            <p style={{ margin: 0, color: 'var(--ink-3)', fontSize: 12.5 }}>Set your WEB_UI_SECRET to authenticate API requests.</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="input"
-              type="password"
-              defaultValue={localStorage.getItem('threadbot_token') || ''}
-              style={{ width: 300 }}
-              onBlur={e => {
-                localStorage.setItem('threadbot_token', e.target.value);
-              }}
-            />
-            <button className="btn" onClick={() => window.location.reload()}>Apply</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
