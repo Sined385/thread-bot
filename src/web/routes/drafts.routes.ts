@@ -138,4 +138,47 @@ router.put('/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+router.post('/:id/schedule', (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const id = parseInt(String(req.params.id));
+  const scheduledForRaw = req.body?.scheduled_for;
+  if (!scheduledForRaw) {
+    res.status(400).json({ error: 'Missing scheduled_for' });
+    return;
+  }
+  const scheduledFor = new Date(scheduledForRaw);
+  if (Number.isNaN(scheduledFor.getTime())) {
+    res.status(400).json({ error: 'Invalid scheduled_for' });
+    return;
+  }
+
+  const result = db
+    .update(schema.drafts)
+    .set({ status: 'scheduled', scheduledFor, updatedAt: new Date() })
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
+    .run();
+  if (!result.changes) {
+    res.status(404).json({ error: 'Draft not found' });
+    return;
+  }
+  logger.info({ userId, draftId: id, scheduledFor }, 'Draft scheduled');
+  res.json({ success: true });
+});
+
+router.post('/:id/unschedule', (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const id = parseInt(String(req.params.id));
+  const result = db
+    .update(schema.drafts)
+    .set({ status: 'pending', updatedAt: new Date() })
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
+    .run();
+  if (!result.changes) {
+    res.status(404).json({ error: 'Draft not found' });
+    return;
+  }
+  logger.info({ userId, draftId: id }, 'Draft unscheduled');
+  res.json({ success: true });
+});
+
 export default router;

@@ -14,12 +14,22 @@ interface CreateDraftParams {
   replyToThreadId?: string;
   replyToText?: string;
   replyToUsername?: string;
+  scheduledFor?: Date | null;
 }
 
 export async function createDraft(params: CreateDraftParams) {
-  const { userId, type, content, triggerSource, replyToThreadId, replyToText, replyToUsername } = params;
+  const {
+    userId,
+    type,
+    content,
+    triggerSource,
+    replyToThreadId,
+    replyToText,
+    replyToUsername,
+    scheduledFor,
+  } = params;
 
-  logger.info({ userId, type, triggerSource }, 'Creating new draft');
+  logger.info({ userId, type, triggerSource, scheduledFor }, 'Creating new draft');
 
   const [draft] = db
     .insert(schema.drafts)
@@ -32,6 +42,7 @@ export async function createDraft(params: CreateDraftParams) {
       replyToThreadId: replyToThreadId ?? null,
       replyToText: replyToText ?? null,
       replyToUsername: replyToUsername ?? null,
+      scheduledFor: scheduledFor ?? null,
     })
     .returning()
     .all();

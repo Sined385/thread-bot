@@ -59,6 +59,7 @@ sqlite.exec(`
     telegram_message_id INTEGER,
     telegram_chat_id TEXT,
     trigger_source TEXT NOT NULL,
+    scheduled_for INTEGER,
     published_thread_id TEXT,
     error_message TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
@@ -125,6 +126,7 @@ const additive = [
   'ALTER TABLE users ADD COLUMN telegram_chat_id TEXT',
   'ALTER TABLE users ADD COLUMN telegram_link_token TEXT',
   'ALTER TABLE users ADD COLUMN telegram_link_token_expires_at INTEGER',
+  'ALTER TABLE drafts ADD COLUMN scheduled_for INTEGER',
 ];
 for (const stmt of additive) {
   try {
@@ -136,6 +138,12 @@ for (const stmt of additive) {
 
 try {
   sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_link_token_unique ON users(telegram_link_token)');
+} catch {
+  // index already exists
+}
+
+try {
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_drafts_scheduled_for ON drafts(scheduled_for)');
 } catch {
   // index already exists
 }

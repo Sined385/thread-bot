@@ -72,6 +72,10 @@ export const api = {
   generateDraft: () => apiFetch('/drafts/generate', { method: 'POST' }),
   approveDraft: (id: number) => apiFetch(`/drafts/${id}/approve`, { method: 'POST' }),
   rejectDraft: (id: number) => apiFetch(`/drafts/${id}/reject`, { method: 'POST' }),
+  scheduleDraft: (id: number, scheduledFor: string) =>
+    apiFetch(`/drafts/${id}/schedule`, { method: 'POST', body: JSON.stringify({ scheduled_for: scheduledFor }) }),
+  unscheduleDraft: (id: number) =>
+    apiFetch(`/drafts/${id}/unschedule`, { method: 'POST' }),
   updateDraft: (id: number, content: string) =>
     apiFetch(`/drafts/${id}`, { method: 'PUT', body: JSON.stringify({ content }) }),
 

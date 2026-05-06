@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS: SettingSeed[] = [
   { key: 'min_comment_length', value: 3, category: 'monitoring', label: 'Min Comment Length', description: 'Minimum comment length to respond to', type: 'number' },
 
   // Scheduling
-  { key: 'auto_post_enabled', value: false, category: 'scheduling', label: 'Auto Post Enabled', description: 'Enable automatic post generation', type: 'boolean' },
+  { key: 'auto_post_enabled', value: true, category: 'scheduling', label: 'Auto Post Enabled', description: 'Generate a daily content plan at 9 AM', type: 'boolean' },
   { key: 'post_frequency', value: 'daily', category: 'scheduling', label: 'Post Frequency', description: 'How often to generate posts', type: 'select', options: ['hourly', 'twice_daily', 'daily', 'weekly'] },
   { key: 'post_schedule_cron', value: '0 9,13,18 * * *', category: 'scheduling', label: 'Post Schedule (Cron)', description: 'Cron expression for post schedule', type: 'text' },
   { key: 'max_posts_per_day', value: 3, category: 'scheduling', label: 'Max Posts Per Day', description: 'Maximum original posts per day', type: 'number' },
