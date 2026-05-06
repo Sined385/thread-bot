@@ -8,13 +8,12 @@ import { logger } from '../../logger';
 const router = Router();
 router.use(authMiddleware);
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const allSettings = db
+  const allSettings = await db
     .select()
     .from(schema.settings)
-    .where(eq(schema.settings.userId, userId))
-    .all();
+    .where(eq(schema.settings.userId, userId));
 
   const grouped: Record<string, any[]> = {};
   for (const setting of allSettings) {
@@ -31,7 +30,7 @@ router.get('/', (req: Request, res: Response) => {
   res.json(grouped);
 });
 
-router.put('/:key', (req: Request, res: Response) => {
+router.put('/:key', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const key = String(req.params.key);
   const { value } = req.body;
@@ -41,35 +40,33 @@ router.put('/:key', (req: Request, res: Response) => {
     return;
   }
 
-  const existing = db
+  const existingRows = await db
     .select()
     .from(schema.settings)
     .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, key)))
-    .get();
+    .limit(1);
 
-  if (!existing) {
+  if (!existingRows[0]) {
     res.status(404).json({ error: 'Setting not found' });
     return;
   }
 
-  db.update(schema.settings)
+  await db.update(schema.settings)
     .set({ value: JSON.stringify(value) })
-    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, key)))
-    .run();
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, key)));
 
   logger.info({ userId, key }, 'Setting updated');
   res.json({ success: true });
 });
 
-router.put('/', (req: Request, res: Response) => {
+router.put('/', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const updates: Record<string, any> = req.body;
 
   for (const [key, value] of Object.entries(updates)) {
-    db.update(schema.settings)
+    await db.update(schema.settings)
       .set({ value: JSON.stringify(value) })
-      .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, key)))
-      .run();
+      .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, key)));
   }
 
   logger.info({ userId, keys: Object.keys(updates) }, 'Bulk settings updated');

@@ -11,7 +11,7 @@ import { logger } from '../logger';
 export async function publishScheduledDrafts(): Promise<void> {
   try {
     const now = new Date();
-    const due = db
+    const due = await db
       .select()
       .from(schema.drafts)
       .where(
@@ -20,8 +20,7 @@ export async function publishScheduledDrafts(): Promise<void> {
           isNotNull(schema.drafts.scheduledFor),
           lte(schema.drafts.scheduledFor, now),
         ),
-      )
-      .all();
+      );
 
     if (due.length === 0) return;
 

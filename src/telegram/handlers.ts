@@ -23,7 +23,7 @@ export function registerHandlers(): void {
       return;
     }
 
-    const result = consumeLinkToken(token, chatId);
+    const result = await consumeLinkToken(token, chatId);
     if (result.ok) {
       await ctx.reply('Linked. From now on draft approvals will arrive here.');
     } else if (result.reason === 'expired') {

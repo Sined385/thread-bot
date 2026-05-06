@@ -62,9 +62,9 @@ export const DEFAULT_SETTINGS: SettingSeed[] = [
   { key: 'reply_control', value: 'everyone', category: 'advanced', label: 'Reply Control', description: 'Who can reply to our posts', type: 'select', options: ['everyone', 'accounts_you_follow', 'mentioned_only'] },
 ];
 
-export function seedDefaultSettings(userId: number): void {
+export async function seedDefaultSettings(userId: number): Promise<void> {
   for (const s of DEFAULT_SETTINGS) {
-    db.insert(settings)
+    await db.insert(settings)
       .values({
         userId,
         key: s.key,
@@ -75,14 +75,13 @@ export function seedDefaultSettings(userId: number): void {
         type: s.type,
         options: s.options ? JSON.stringify(s.options) : null,
       })
-      .onConflictDoNothing()
-      .run();
+      .onConflictDoNothing();
   }
 }
 
-export function getSettings(userId: number): Record<string, string> {
+export async function getSettings(userId: number): Promise<Record<string, string>> {
   try {
-    const rows = db.select().from(settings).where(eq(settings.userId, userId)).all();
+    const rows = await db.select().from(settings).where(eq(settings.userId, userId));
     const map: Record<string, string> = {};
     for (const row of rows) {
       let val: string = row.value;
@@ -102,15 +101,14 @@ export function getSettings(userId: number): Record<string, string> {
   }
 }
 
-export function updateSetting(userId: number, key: string, value: unknown): void {
-  db.update(settings)
+export async function updateSetting(userId: number, key: string, value: unknown): Promise<void> {
+  await db.update(settings)
     .set({ value: JSON.stringify(value) })
-    .where(and(eq(settings.userId, userId), eq(settings.key, key)))
-    .run();
+    .where(and(eq(settings.userId, userId), eq(settings.key, key)));
 }
 
-export function updateSettings(userId: number, updates: Record<string, unknown>): void {
+export async function updateSettings(userId: number, updates: Record<string, unknown>): Promise<void> {
   for (const [key, value] of Object.entries(updates)) {
-    updateSetting(userId, key, value);
+    await updateSetting(userId, key, value);
   }
 }

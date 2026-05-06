@@ -11,18 +11,17 @@ export interface LinkToken {
   expiresAt: Date;
 }
 
-export function createLinkToken(userId: number): LinkToken {
+export async function createLinkToken(userId: number): Promise<LinkToken> {
   const token = randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
 
-  db.update(users)
+  await db.update(users)
     .set({
       telegramLinkToken: token,
       telegramLinkTokenExpiresAt: expiresAt,
       updatedAt: new Date(),
     })
-    .where(eq(users.id, userId))
-    .run();
+    .where(eq(users.id, userId));
 
   logger.info({ userId, expiresAt }, 'Created telegram link token');
   return { token, expiresAt };
@@ -34,8 +33,9 @@ export interface ConsumeResult {
   userId?: number;
 }
 
-export function consumeLinkToken(token: string, chatId: string | number): ConsumeResult {
-  const row = db.select().from(users).where(eq(users.telegramLinkToken, token)).get();
+export async function consumeLinkToken(token: string, chatId: string | number): Promise<ConsumeResult> {
+  const rows = await db.select().from(users).where(eq(users.telegramLinkToken, token)).limit(1);
+  const row = rows[0];
   if (!row) return { ok: false, reason: 'unknown' };
 
   const expiresAt = row.telegramLinkTokenExpiresAt;
@@ -43,17 +43,15 @@ export function consumeLinkToken(token: string, chatId: string | number): Consum
     return { ok: false, reason: 'expired' };
   }
 
-  db.update(users)
+  await db.update(users)
     .set({
       telegramChatId: String(chatId),
       telegramLinkToken: null,
       telegramLinkTokenExpiresAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(users.id, row.id))
-    .run();
+    .where(eq(users.id, row.id));
 
   logger.info({ userId: row.id, chatId: String(chatId) }, 'Consumed telegram link token');
   return { ok: true, userId: row.id };
 }
-

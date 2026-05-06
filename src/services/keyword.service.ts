@@ -11,7 +11,7 @@ export async function checkKeywords(
 ): Promise<void> {
   logger.debug({ userId, threadId, commentUsername }, 'Checking comment for keyword matches');
 
-  const settings = getSettings(userId);
+  const settings = await getSettings(userId);
   const monitorKeywords = parseJsonArray(settings.monitor_keywords);
 
   if (monitorKeywords.length === 0) {

@@ -6,8 +6,8 @@ import { logger } from '../logger';
  * Generates an original post for Threads.
  */
 export async function generatePost(userId: number): Promise<string> {
-  const s = getSettings(userId);
-  const systemPrompt = buildSystemPrompt(userId, 'post');
+  const s = await getSettings(userId);
+  const systemPrompt = await buildSystemPrompt(userId, 'post');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);
@@ -49,8 +49,8 @@ export async function generateReply(
   commentUsername: string,
   context?: string,
 ): Promise<string> {
-  const s = getSettings(userId);
-  const systemPrompt = buildSystemPrompt(userId, 'reply');
+  const s = await getSettings(userId);
+  const systemPrompt = await buildSystemPrompt(userId, 'reply');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);
@@ -94,8 +94,8 @@ export async function generateMentionReply(
   mentionText: string,
   mentionUsername: string,
 ): Promise<string> {
-  const s = getSettings(userId);
-  const systemPrompt = buildSystemPrompt(userId, 'mention_reply');
+  const s = await getSettings(userId);
+  const systemPrompt = await buildSystemPrompt(userId, 'mention_reply');
   const model = s.openai_model || 'gpt-4o';
   const temperature = parseFloat(s.openai_temperature || '0.8');
   const maxPostLength = parseInt(s.max_post_length || '500', 10);

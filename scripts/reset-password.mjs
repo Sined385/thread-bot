@@ -1,10 +1,8 @@
-// Plain ESM so it runs under `node` in production (no tsx needed).
+// Plain ESM, runs under `node` in production (no tsx, no native deps beyond pg).
 // Usage: node scripts/reset-password.mjs --email=... --password=...
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import fs from 'node:fs';
+import postgres from 'postgres';
 
 function arg(name) {
   const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -27,23 +25,29 @@ if (password.length < 8) {
   process.exit(1);
 }
 
-const dbPath = process.env.DATABASE_PATH || './data/threads-bot.db';
-if (!fs.existsSync(dbPath)) {
-  console.error(`No database at ${dbPath}.`);
-  process.exit(1);
-}
-console.log(`Using database at ${path.resolve(dbPath)}`);
-
-const sqlite = new Database(dbPath);
-const row = sqlite.prepare('SELECT id, email FROM users WHERE email = ?').get(email.toLowerCase().trim());
-if (!row) {
-  console.error(`No user with email ${email}.`);
-  sqlite.close();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('DATABASE_URL is not set.');
   process.exit(1);
 }
 
-const hash = bcrypt.hashSync(password, 10);
-sqlite.prepare('UPDATE users SET password_hash = ?, updated_at = unixepoch() WHERE id = ?').run(hash, row.id);
+const sql = postgres(connectionString, {
+  max: 1,
+  ssl: process.env.NODE_ENV === 'production' ? 'require' : undefined,
+});
 
-console.log(`Password reset for user #${row.id} (${row.email}).`);
-sqlite.close();
+try {
+  const rows = await sql`SELECT id, email FROM users WHERE email = ${email.toLowerCase().trim()}`;
+  const row = rows[0];
+  if (!row) {
+    console.error(`No user with email ${email}.`);
+    process.exit(1);
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  await sql`UPDATE users SET password_hash = ${hash}, updated_at = now() WHERE id = ${row.id}`;
+
+  console.log(`Password reset for user #${row.id} (${row.email}).`);
+} finally {
+  await sql.end();
+}

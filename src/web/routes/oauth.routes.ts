@@ -26,8 +26,8 @@ import { logger } from '../../logger';
  * user isn't onboarded yet, redirect straight to /onboarding with the
  * params attached.
  */
-function postOauthRedirect(userId: number, params: Record<string, string>): string {
-  const user = getUserById(userId);
+async function postOauthRedirect(userId: number, params: Record<string, string>): Promise<string> {
+  const user = await getUserById(userId);
   const path = user?.onboardingCompletedAt ? '/integrations' : '/onboarding';
   const qs = new URLSearchParams(params).toString();
   return `${path}?${qs}`;
@@ -104,13 +104,13 @@ router.get('/callback', async (req: Request, res: Response) => {
 
   if (error) {
     logger.error({ error, errorDescription, userId }, 'oauth provider returned error');
-    res.redirect(postOauthRedirect(userId, { error: error }));
+    res.redirect(await postOauthRedirect(userId, { error: error }));
     return;
   }
 
   if (!code) {
     logger.error({ userId, query: req.query }, 'oauth callback missing code');
-    res.redirect(postOauthRedirect(userId, { error: 'missing_code' }));
+    res.redirect(await postOauthRedirect(userId, { error: 'missing_code' }));
     return;
   }
 
@@ -126,18 +126,18 @@ router.get('/callback', async (req: Request, res: Response) => {
     await saveAccount(userId, profile, longToken.access_token, longToken.expires_in);
 
     logger.info({ username: profile.username, userId }, 'Account connected');
-    res.redirect(postOauthRedirect(userId, { connected: '1' }));
+    res.redirect(await postOauthRedirect(userId, { connected: '1' }));
   } catch (e: any) {
     if (e instanceof AccountAlreadyLinkedError) {
       logger.warn({ userId, ownerUserId: e.ownerUserId }, 'oauth refused: account linked to another user');
-      res.redirect(postOauthRedirect(userId, { error: 'account_already_linked' }));
+      res.redirect(await postOauthRedirect(userId, { error: 'account_already_linked' }));
       return;
     }
     logger.error(
       { error: e?.message || String(e), stack: e?.stack, userId },
       'OAuth callback failed',
     );
-    res.redirect(postOauthRedirect(userId, { error: 'callback_failed', detail: e?.message || 'unknown' }));
+    res.redirect(await postOauthRedirect(userId, { error: 'callback_failed', detail: e?.message || 'unknown' }));
   }
 });
 
@@ -146,7 +146,7 @@ router.get('/callback', async (req: Request, res: Response) => {
  * Threads side. Body: signed_request (HMAC over THREADS_APP_SECRET).
  * On success: drop the matching accounts row.
  * --------------------------------------------------------------------- */
-router.post('/deauthorize', (req: Request, res: Response) => {
+router.post('/deauthorize', async (req: Request, res: Response) => {
   const signed = (req.body?.signed_request as string | undefined) ?? '';
   const payload = parseSignedRequest(signed, config.THREADS_APP_SECRET);
   if (!payload) {
@@ -156,13 +156,13 @@ router.post('/deauthorize', (req: Request, res: Response) => {
   }
 
   const threadsUserId = payload.user_id;
-  const removed = db
+  const removed = await db
     .delete(schema.accounts)
     .where(eq(schema.accounts.threadsUserId, threadsUserId))
-    .run();
+    .returning({ id: schema.accounts.id });
 
-  logger.info({ threadsUserId, removed: removed.changes }, 'deauthorize: removed account row');
-  res.status(200).json({ ok: true, removed: removed.changes });
+  logger.info({ threadsUserId, removed: removed.length }, 'deauthorize: removed account row');
+  res.status(200).json({ ok: true, removed: removed.length });
 });
 
 /* -----------------------------------------------------------------------
@@ -170,7 +170,7 @@ router.post('/deauthorize', (req: Request, res: Response) => {
  * We must respond with { url, confirmation_code } per Meta's spec, and
  * actually remove their data.
  * --------------------------------------------------------------------- */
-router.post('/data-deletion', (req: Request, res: Response) => {
+router.post('/data-deletion', async (req: Request, res: Response) => {
   const signed = (req.body?.signed_request as string | undefined) ?? '';
   const payload = parseSignedRequest(signed, config.THREADS_APP_SECRET);
   if (!payload) {
@@ -182,23 +182,22 @@ router.post('/data-deletion', (req: Request, res: Response) => {
   const threadsUserId = payload.user_id;
   const confirmationCode = `del_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  // Find the user that owns this Threads account, then cascade-delete
-  // everything tied to that user.
-  const account = db
+  const accountRows = await db
     .select()
     .from(schema.accounts)
     .where(eq(schema.accounts.threadsUserId, threadsUserId))
-    .get();
+    .limit(1);
+  const account = accountRows[0];
 
   if (account) {
     const userId = account.userId;
-    db.delete(schema.drafts).where(eq(schema.drafts.userId, userId)).run();
-    db.delete(schema.settings).where(eq(schema.settings.userId, userId)).run();
-    db.delete(schema.publishedPosts).where(eq(schema.publishedPosts.userId, userId)).run();
-    db.delete(schema.processedThreads).where(eq(schema.processedThreads.userId, userId)).run();
-    db.delete(schema.webhookEvents).where(eq(schema.webhookEvents.userId, userId)).run();
-    db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
-    db.delete(schema.users).where(eq(schema.users.id, userId)).run();
+    await db.delete(schema.drafts).where(eq(schema.drafts.userId, userId));
+    await db.delete(schema.settings).where(eq(schema.settings.userId, userId));
+    await db.delete(schema.publishedPosts).where(eq(schema.publishedPosts.userId, userId));
+    await db.delete(schema.processedThreads).where(eq(schema.processedThreads.userId, userId));
+    await db.delete(schema.webhookEvents).where(eq(schema.webhookEvents.userId, userId));
+    await db.delete(schema.accounts).where(eq(schema.accounts.userId, userId));
+    await db.delete(schema.users).where(eq(schema.users.id, userId));
     logger.info({ threadsUserId, userId, confirmationCode }, 'data-deletion: user data cascade-deleted');
   } else {
     logger.info({ threadsUserId, confirmationCode }, 'data-deletion: no matching account, nothing to delete');

@@ -31,7 +31,7 @@ export async function createDraft(params: CreateDraftParams) {
 
   logger.info({ userId, type, triggerSource, scheduledFor }, 'Creating new draft');
 
-  const [draft] = db
+  const [draft] = await db
     .insert(schema.drafts)
     .values({
       userId,
@@ -44,12 +44,11 @@ export async function createDraft(params: CreateDraftParams) {
       replyToUsername: replyToUsername ?? null,
       scheduledFor: scheduledFor ?? null,
     })
-    .returning()
-    .all();
+    .returning();
 
   logger.info({ userId, draftId: draft.id }, 'Draft inserted into database');
 
-  const owner = getUserById(userId);
+  const owner = await getUserById(userId);
   if (!owner?.telegramChatId) {
     logger.info(
       { userId, draftId: draft.id },
@@ -72,14 +71,13 @@ export async function createDraft(params: CreateDraftParams) {
       owner.telegramChatId,
     );
 
-    db.update(schema.drafts)
+    await db.update(schema.drafts)
       .set({
         telegramMessageId: message.message_id,
         telegramChatId: String(message.chat.id),
         updatedAt: new Date(),
       })
-      .where(eq(schema.drafts.id, draft.id))
-      .run();
+      .where(eq(schema.drafts.id, draft.id));
 
     logger.info(
       { draftId: draft.id, telegramMessageId: message.message_id },
@@ -95,21 +93,21 @@ export async function createDraft(params: CreateDraftParams) {
 export async function publishDraft(userId: number, draftId: number) {
   logger.info({ userId, draftId }, 'Publishing draft');
 
-  const draft = db
+  const [draft] = await db
     .select()
     .from(schema.drafts)
     .where(and(eq(schema.drafts.id, draftId), eq(schema.drafts.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!draft) {
     throw new Error(`Draft ${draftId} not found for user ${userId}`);
   }
 
-  const account = db
+  const [account] = await db
     .select()
     .from(schema.accounts)
     .where(eq(schema.accounts.userId, userId))
-    .get();
+    .limit(1);
 
   if (!account) {
     throw new Error('No Threads account configured. Please authenticate first.');
@@ -129,23 +127,21 @@ export async function publishDraft(userId: number, draftId: number) {
       result = await api.replyToPost(draft.content, draft.replyToThreadId);
     }
 
-    db.update(schema.drafts)
+    await db.update(schema.drafts)
       .set({
         status: 'published',
         publishedThreadId: result.id,
         updatedAt: new Date(),
       })
-      .where(eq(schema.drafts.id, draftId))
-      .run();
+      .where(eq(schema.drafts.id, draftId));
 
-    db.insert(schema.publishedPosts)
+    await db.insert(schema.publishedPosts)
       .values({
         userId,
         threadsMediaId: result.id,
         content: draft.content,
         draftId: draft.id,
-      })
-      .run();
+      });
 
     logger.info(
       { userId, draftId, publishedThreadId: result.id },
@@ -169,14 +165,13 @@ export async function publishDraft(userId: number, draftId: number) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    db.update(schema.drafts)
+    await db.update(schema.drafts)
       .set({
         status: 'failed',
         errorMessage,
         updatedAt: new Date(),
       })
-      .where(eq(schema.drafts.id, draftId))
-      .run();
+      .where(eq(schema.drafts.id, draftId));
 
     logger.error({ error: errorMessage, userId, draftId }, 'Failed to publish draft');
 
@@ -197,51 +192,50 @@ export async function publishDraft(userId: number, draftId: number) {
   }
 }
 
-export function getPendingDrafts(userId: number) {
+export async function getPendingDrafts(userId: number) {
   return db
     .select()
     .from(schema.drafts)
     .where(and(eq(schema.drafts.userId, userId), eq(schema.drafts.status, 'pending')))
-    .orderBy(desc(schema.drafts.createdAt))
-    .all();
+    .orderBy(desc(schema.drafts.createdAt));
 }
 
-export function getDraftById(userId: number, id: number) {
-  return db
+export async function getDraftById(userId: number, id: number) {
+  const rows = await db
     .select()
     .from(schema.drafts)
     .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .get();
+    .limit(1);
+  return rows[0];
 }
 
-export function updateDraftContent(userId: number, id: number, newContent: string) {
-  db.update(schema.drafts)
+export async function updateDraftContent(userId: number, id: number, newContent: string) {
+  await db.update(schema.drafts)
     .set({
       content: newContent,
       updatedAt: new Date(),
     })
-    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .run();
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)));
 
   logger.info({ userId, draftId: id }, 'Draft content updated');
 
   return getDraftById(userId, id);
 }
 
-export function getDraftStats(userId: number) {
-  const rows = db
+export async function getDraftStats(userId: number) {
+  const rows = await db
     .select({
       status: schema.drafts.status,
       count: count(),
     })
     .from(schema.drafts)
     .where(eq(schema.drafts.userId, userId))
-    .groupBy(schema.drafts.status)
-    .all();
+    .groupBy(schema.drafts.status);
 
   const stats: Record<string, number> = {
     pending: 0,
     approved: 0,
+    scheduled: 0,
     rejected: 0,
     published: 0,
     failed: 0,

@@ -8,11 +8,10 @@ export async function refreshExpiringTokens(): Promise<void> {
   try {
     const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const expiringAccounts = db
+    const expiringAccounts = await db
       .select()
       .from(schema.accounts)
-      .where(lte(schema.accounts.tokenExpiresAt, sevenDaysFromNow))
-      .all();
+      .where(lte(schema.accounts.tokenExpiresAt, sevenDaysFromNow));
 
     for (const account of expiringAccounts) {
       try {
@@ -20,14 +19,13 @@ export async function refreshExpiringTokens(): Promise<void> {
         const refreshed = await refreshLongLivedToken(account.accessToken);
 
         const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
-        db.update(schema.accounts)
+        await db.update(schema.accounts)
           .set({
             accessToken: refreshed.access_token,
             tokenExpiresAt: newExpiresAt,
             updatedAt: new Date(),
           })
-          .where(eq(schema.accounts.id, account.id))
-          .run();
+          .where(eq(schema.accounts.id, account.id));
 
         logger.info(
           { accountId: account.id, username: account.username, newExpiresAt },

@@ -45,19 +45,19 @@ export function computeDailySlots(now: Date, count: number): Date[] {
  */
 export async function generateDailyPlan(userId: number): Promise<void> {
   try {
-    const settings = getSettings(userId);
+    const settings = await getSettings(userId);
 
     if (settings.auto_post_enabled !== 'true') {
       logger.debug({ userId }, 'auto_post_enabled is false, skipping daily plan');
       return;
     }
 
-    const account = db
+    const accountRows = await db
       .select()
       .from(schema.accounts)
       .where(eq(schema.accounts.userId, userId))
-      .get();
-    if (!account) {
+      .limit(1);
+    if (!accountRows[0]) {
       logger.debug({ userId }, 'No Threads account, skipping daily plan');
       return;
     }
@@ -67,7 +67,7 @@ export async function generateDailyPlan(userId: number): Promise<void> {
     todayStart.setHours(0, 0, 0, 0);
 
     // Don't double-up if the cron got triggered twice today.
-    const todayCount = db
+    const todayCountRows = await db
       .select({ count: sql<number>`count(*)` })
       .from(schema.drafts)
       .where(
@@ -77,8 +77,8 @@ export async function generateDailyPlan(userId: number): Promise<void> {
           eq(schema.drafts.triggerSource, 'scheduled'),
           gte(schema.drafts.createdAt, todayStart),
         ),
-      )
-      .get();
+      );
+    const todayCount = todayCountRows[0];
     if ((todayCount?.count ?? 0) >= maxPerDay) {
       logger.info({ userId, maxPerDay }, 'daily plan already generated for today, skipping');
       return;
@@ -92,8 +92,8 @@ export async function generateDailyPlan(userId: number): Promise<void> {
       return;
     }
 
-    if (!canPost()) {
-      logger.warn({ remaining: getRemainingQuota() }, 'Rate limit reached; skipping daily plan');
+    if (!(await canPost())) {
+      logger.warn({ remaining: await getRemainingQuota() }, 'Rate limit reached; skipping daily plan');
       return;
     }
 
@@ -123,7 +123,7 @@ export async function generateDailyPlan(userId: number): Promise<void> {
  * Run generateDailyPlan for every user in the database. Used by the 9 AM cron.
  */
 export async function generateDailyPlanForAll(): Promise<void> {
-  const allUsers = db.select({ id: schema.users.id }).from(schema.users).all();
+  const allUsers = await db.select({ id: schema.users.id }).from(schema.users);
   for (const user of allUsers) {
     await generateDailyPlan(user.id);
   }

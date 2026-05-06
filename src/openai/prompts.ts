@@ -1,17 +1,17 @@
 import { getSettings as getSettingsForUser } from '../services/settings.service';
 
-export function getSettings(userId: number): Record<string, string> {
+export async function getSettings(userId: number): Promise<Record<string, string>> {
   return getSettingsForUser(userId);
 }
 
 /**
  * Builds a system prompt for OpenAI based on settings stored in the database.
  */
-export function buildSystemPrompt(
+export async function buildSystemPrompt(
   userId: number,
   context: 'post' | 'reply' | 'mention_reply',
-): string {
-  const s = getSettings(userId);
+): Promise<string> {
+  const s = await getSettings(userId);
 
   // Check for context-specific prompt overrides first
   if (context === 'post' && s.post_system_prompt) {

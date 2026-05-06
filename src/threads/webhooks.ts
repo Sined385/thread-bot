@@ -56,11 +56,12 @@ export async function processWebhookEvent(
 
   for (const entry of payload.entry) {
     // Resolve which user this entry belongs to via the Threads user id (entry.id).
-    const account = db
+    const accountRows = await db
       .select()
       .from(schema.accounts)
       .where(eq(schema.accounts.threadsUserId, entry.id))
-      .get();
+      .limit(1);
+    const account = accountRows[0];
 
     const userId = account?.userId ?? null;
 
@@ -69,15 +70,14 @@ export async function processWebhookEvent(
     }
 
     for (const change of entry.changes) {
-      db.insert(schema.webhookEvents)
+      await db.insert(schema.webhookEvents)
         .values({
           userId,
           topic: payload.object,
           field: change.field,
           payload: JSON.stringify({ entry, change }),
           processed: false,
-        })
-        .run();
+        });
 
       logger.debug(
         {

@@ -8,7 +8,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) {
     res.status(401).json({ error: 'Unauthorized' });
@@ -21,7 +21,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     return;
   }
 
-  const user = getUserById(payload.userId);
+  const user = await getUserById(payload.userId);
   if (!user) {
     res.status(401).json({ error: 'Unauthorized' });
     return;

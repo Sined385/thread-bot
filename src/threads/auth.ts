@@ -143,11 +143,12 @@ export async function saveAccount(
 
   logger.info({ userId, threadsUserId: profile.id, username: profile.username }, 'Saving account to database');
 
-  const existing = db
+  const existingRows = await db
     .select()
     .from(schema.accounts)
     .where(eq(schema.accounts.threadsUserId, profile.id))
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
     if (existing.userId !== userId) {
@@ -158,7 +159,7 @@ export async function saveAccount(
       throw new AccountAlreadyLinkedError(existing.userId);
     }
 
-    db.update(schema.accounts)
+    await db.update(schema.accounts)
       .set({
         username: profile.username,
         accessToken: token,
@@ -167,12 +168,11 @@ export async function saveAccount(
         profilePictureUrl: profile.threads_profile_picture_url ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(schema.accounts.threadsUserId, profile.id))
-      .run();
+      .where(eq(schema.accounts.threadsUserId, profile.id));
 
     logger.info({ userId, threadsUserId: profile.id }, 'Updated existing account');
   } else {
-    db.insert(schema.accounts)
+    await db.insert(schema.accounts)
       .values({
         userId,
         threadsUserId: profile.id,
@@ -181,8 +181,7 @@ export async function saveAccount(
         tokenExpiresAt: expiresAt,
         scopes: SCOPES.join(','),
         profilePictureUrl: profile.threads_profile_picture_url ?? null,
-      })
-      .run();
+      });
 
     logger.info({ userId, threadsUserId: profile.id }, 'Created new account');
   }

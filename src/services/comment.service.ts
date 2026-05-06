@@ -17,7 +17,7 @@ export async function processComment(
     'Processing incoming comment',
   );
 
-  const existing = db
+  const existingRows = await db
     .select()
     .from(schema.processedThreads)
     .where(
@@ -27,14 +27,15 @@ export async function processComment(
         eq(schema.processedThreads.type, 'comment'),
       ),
     )
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
     logger.debug({ userId, threadId }, 'Comment already processed, skipping');
     return;
   }
 
-  const settings = getSettings(userId);
+  const settings = await getSettings(userId);
 
   const monitorComments = settings.monitor_comments !== 'false';
   if (!monitorComments) {
@@ -42,11 +43,12 @@ export async function processComment(
     return;
   }
 
-  const account = db
+  const accountRows = await db
     .select()
     .from(schema.accounts)
     .where(eq(schema.accounts.userId, userId))
-    .get();
+    .limit(1);
+  const account = accountRows[0];
 
   if (account && commentUsername.toLowerCase() === account.username.toLowerCase()) {
     logger.debug({ userId, commentUsername }, 'Comment is from our own account, skipping');
@@ -111,13 +113,12 @@ export async function processComment(
     replyToUsername: commentUsername,
   });
 
-  db.insert(schema.processedThreads)
+  await db.insert(schema.processedThreads)
     .values({
       userId,
       threadsMediaId: threadId,
       type: 'comment',
-    })
-    .run();
+    });
 
   logger.info({ userId, threadId }, 'Comment processed and draft created');
 }

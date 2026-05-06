@@ -8,30 +8,30 @@ import { logger } from '../../logger';
 const router = Router();
 router.use(authMiddleware);
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const limit = parseInt(req.query.limit as string) || 50;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const posts = db
+  const posts = await db
     .select()
     .from(schema.publishedPosts)
     .where(eq(schema.publishedPosts.userId, userId))
     .orderBy(desc(schema.publishedPosts.createdAt))
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
 
   res.json(posts);
 });
 
-router.get('/account', (req: Request, res: Response) => {
+router.get('/account', async (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const account = db
+  const accountRows = await db
     .select()
     .from(schema.accounts)
     .where(eq(schema.accounts.userId, userId))
-    .get();
+    .limit(1);
+  const account = accountRows[0];
   if (!account) {
     res.json(null);
     return;
@@ -46,14 +46,14 @@ router.get('/account', (req: Request, res: Response) => {
   });
 });
 
-router.delete('/account', (req: Request, res: Response) => {
+router.delete('/account', async (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const result = db
+  const removed = await db
     .delete(schema.accounts)
     .where(eq(schema.accounts.userId, userId))
-    .run();
-  logger.info({ userId, changes: result.changes }, 'Disconnected Threads account');
-  res.json({ ok: true, removed: result.changes });
+    .returning({ id: schema.accounts.id });
+  logger.info({ userId, removed: removed.length }, 'Disconnected Threads account');
+  res.json({ ok: true, removed: removed.length });
 });
 
 export default router;

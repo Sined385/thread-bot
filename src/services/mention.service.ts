@@ -16,7 +16,7 @@ export async function processMention(
     'Processing incoming mention',
   );
 
-  const existing = db
+  const existingRows = await db
     .select()
     .from(schema.processedThreads)
     .where(
@@ -25,14 +25,15 @@ export async function processMention(
         eq(schema.processedThreads.threadsMediaId, threadId),
       ),
     )
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
     logger.debug({ userId, threadId }, 'Mention already processed, skipping');
     return;
   }
 
-  const settings = getSettings(userId);
+  const settings = await getSettings(userId);
 
   const monitorMentions = settings.monitor_mentions !== 'false';
   if (!monitorMentions) {
@@ -66,13 +67,12 @@ export async function processMention(
     replyToUsername: mentionUsername,
   });
 
-  db.insert(schema.processedThreads)
+  await db.insert(schema.processedThreads)
     .values({
       userId,
       threadsMediaId: threadId,
       type: 'mention',
-    })
-    .run();
+    });
 
   logger.info({ userId, threadId }, 'Mention processed and draft created');
 }

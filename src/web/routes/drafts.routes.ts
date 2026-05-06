@@ -15,50 +15,49 @@ import { logger } from '../../logger';
 const router = Router();
 router.use(authMiddleware);
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const status = req.query.status as string;
   const limit = parseInt(req.query.limit as string) || 50;
   const offset = parseInt(req.query.offset as string) || 0;
 
   if (status) {
-    const results = db
+    const results = await db
       .select()
       .from(schema.drafts)
       .where(and(eq(schema.drafts.userId, userId), eq(schema.drafts.status, status as any)))
       .orderBy(desc(schema.drafts.createdAt))
       .limit(limit)
-      .offset(offset)
-      .all();
+      .offset(offset);
     res.json(results);
     return;
   }
 
-  const results = db
+  const results = await db
     .select()
     .from(schema.drafts)
     .where(eq(schema.drafts.userId, userId))
     .orderBy(desc(schema.drafts.createdAt))
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
   res.json(results);
 });
 
-router.get('/stats', (req: Request, res: Response) => {
+router.get('/stats', async (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const stats = getDraftStats(userId);
+  const stats = await getDraftStats(userId);
   res.json(stats);
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const id = parseInt(String(req.params.id));
-  const draft = db
+  const rows = await db
     .select()
     .from(schema.drafts)
     .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .get();
+    .limit(1);
+  const draft = rows[0];
   if (!draft) {
     res.status(404).json({ error: 'Draft not found' });
     return;
@@ -116,17 +115,16 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/:id/reject', (req: Request, res: Response) => {
+router.post('/:id/reject', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const id = parseInt(String(req.params.id));
-  db.update(schema.drafts)
+  await db.update(schema.drafts)
     .set({ status: 'rejected', updatedAt: new Date() })
-    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .run();
+    .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)));
   res.json({ success: true });
 });
 
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const id = parseInt(String(req.params.id));
   const { content } = req.body;
@@ -134,11 +132,11 @@ router.put('/:id', (req: Request, res: Response) => {
     res.status(400).json({ error: 'Missing content' });
     return;
   }
-  updateDraftContent(userId, id, content);
+  await updateDraftContent(userId, id, content);
   res.json({ success: true });
 });
 
-router.post('/:id/schedule', (req: Request, res: Response) => {
+router.post('/:id/schedule', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const id = parseInt(String(req.params.id));
   const scheduledForRaw = req.body?.scheduled_for;
@@ -152,12 +150,12 @@ router.post('/:id/schedule', (req: Request, res: Response) => {
     return;
   }
 
-  const result = db
+  const updated = await db
     .update(schema.drafts)
     .set({ status: 'scheduled', scheduledFor, updatedAt: new Date() })
     .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .run();
-  if (!result.changes) {
+    .returning({ id: schema.drafts.id });
+  if (updated.length === 0) {
     res.status(404).json({ error: 'Draft not found' });
     return;
   }
@@ -165,15 +163,15 @@ router.post('/:id/schedule', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-router.post('/:id/unschedule', (req: Request, res: Response) => {
+router.post('/:id/unschedule', async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const id = parseInt(String(req.params.id));
-  const result = db
+  const updated = await db
     .update(schema.drafts)
     .set({ status: 'pending', updatedAt: new Date() })
     .where(and(eq(schema.drafts.id, id), eq(schema.drafts.userId, userId)))
-    .run();
-  if (!result.changes) {
+    .returning({ id: schema.drafts.id });
+  if (updated.length === 0) {
     res.status(404).json({ error: 'Draft not found' });
     return;
   }

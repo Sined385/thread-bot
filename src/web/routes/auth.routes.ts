@@ -63,7 +63,7 @@ router.post('/signup', async (req, res) => {
     return;
   }
 
-  const existing = getUserByEmail(parsed.data.email);
+  const existing = await getUserByEmail(parsed.data.email);
   if (existing) {
     res.status(409).json({ error: 'Email already registered' });
     return;
@@ -94,7 +94,7 @@ router.post('/login', async (req, res) => {
     return;
   }
 
-  const user = getUserByEmail(parsed.data.email);
+  const user = await getUserByEmail(parsed.data.email);
   if (!user) {
     res.status(401).json({ error: 'Invalid email or password' });
     return;
@@ -120,25 +120,24 @@ router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: publicUser(req.user!) });
 });
 
-router.post('/telegram/link', authMiddleware, (req, res) => {
+router.post('/telegram/link', authMiddleware, async (req, res) => {
   const username = getBotUsername();
   if (!username) {
     res.status(503).json({ error: 'Telegram bot not ready' });
     return;
   }
-  const { token, expiresAt } = createLinkToken(req.user!.id);
+  const { token, expiresAt } = await createLinkToken(req.user!.id);
   const url = `https://t.me/${username}?start=${token}`;
   res.json({ url, expires_at: expiresAt.toISOString() });
 });
 
-router.post('/onboarding-complete', authMiddleware, (req, res) => {
+router.post('/onboarding-complete', authMiddleware, async (req, res) => {
   const userId = req.user!.id;
   const now = new Date();
-  db.update(users)
+  await db.update(users)
     .set({ onboardingCompletedAt: now, updatedAt: now })
-    .where(eq(users.id, userId))
-    .run();
-  const updated = getUserById(userId);
+    .where(eq(users.id, userId));
+  const updated = await getUserById(userId);
   if (!updated) {
     res.status(404).json({ error: 'User not found' });
     return;

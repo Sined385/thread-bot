@@ -20,8 +20,8 @@ const BCRYPT_ROUNDS = 10;
 export async function createUser(input: CreateUserInput): Promise<User> {
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
-  const inserted = db.transaction((tx) => {
-    const [row] = tx
+  const inserted = await db.transaction(async (tx) => {
+    const [row] = await tx
       .insert(users)
       .values({
         email: input.email.toLowerCase().trim(),
@@ -30,27 +30,28 @@ export async function createUser(input: CreateUserInput): Promise<User> {
         workspaceName: input.workspaceName.trim(),
         workspaceWebsite: input.workspaceWebsite?.trim() || null,
       })
-      .returning()
-      .all();
+      .returning();
     return row;
   });
 
-  seedDefaultSettings(inserted.id);
+  await seedDefaultSettings(inserted.id);
 
   logger.info({ userId: inserted.id, email: inserted.email }, 'User created');
   return inserted;
 }
 
-export function getUserByEmail(email: string): User | undefined {
-  return db
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const rows = await db
     .select()
     .from(users)
     .where(eq(users.email, email.toLowerCase().trim()))
-    .get();
+    .limit(1);
+  return rows[0];
 }
 
-export function getUserById(id: number): User | undefined {
-  return db.select().from(users).where(eq(users.id, id)).get();
+export async function getUserById(id: number): Promise<User | undefined> {
+  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return rows[0];
 }
 
 export async function verifyPassword(user: User, plaintext: string): Promise<boolean> {
